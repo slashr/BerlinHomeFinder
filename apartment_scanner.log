@@ -1,0 +1,77 @@
+2024-11-25 17:30:02,903 [INFO] Script has started running.
+2024-11-25 17:31:00,019 [ERROR] Exception in callback Cron.set_result(<_GatheringFu...ot defined")]>)
+handle: <Handle Cron.set_result(<_GatheringFu...ot defined")]>)>
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/asyncio/events.py", line 88, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/akash/Code/BerlinDreamHomeBot/venv/lib/python3.12/site-packages/aiocron/__init__.py", line 112, in set_result
+    raise result
+  File "/Users/akash/Code/BerlinDreamHomeBot/scan.py", line 258, in job
+    scan_degewo(session),
+    ^^^^^^^^^^^
+NameError: name 'scan_degewo' is not defined
+2024-11-25 17:33:29,139 [INFO] Script has started running.
+2024-11-25 17:34:00,014 [ERROR] Exception in callback Cron.set_result(<_GatheringFu...ot defined")]>)
+handle: <Handle Cron.set_result(<_GatheringFu...ot defined")]>)>
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/asyncio/events.py", line 88, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/akash/Code/BerlinDreamHomeBot/venv/lib/python3.12/site-packages/aiocron/__init__.py", line 112, in set_result
+    raise result
+  File "/Users/akash/Code/BerlinDreamHomeBot/scan.py", line 290, in job
+    scan_degewo(session),
+    ^^^^^^^^^^^
+NameError: name 'scan_degewo' is not defined
+2024-11-25 17:34:31,341 [INFO] Script has started running.
+2024-11-25 17:35:00,142 [ERROR] Error fetching https://immosuche.gesobau.de/de/search: Cannot connect to host immosuche.gesobau.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:35:00,147 [INFO] Found 0 listings on Gesobau
+2024-11-25 17:35:00,182 [ERROR] Error fetching https://immosuche.gewobag.de/de/search: Cannot connect to host immosuche.gewobag.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:35:00,182 [INFO] Found 0 listings on Gewobag
+2024-11-25 17:35:00,185 [ERROR] Error fetching https://immosuche.stadtundland.de/de/search: Cannot connect to host immosuche.stadtundland.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:35:00,185 [INFO] Found 0 listings on StadtUndLand
+2024-11-25 17:35:00,197 [ERROR] Error fetching https://immosuche.wbm.de/de/search: Cannot connect to host immosuche.wbm.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:35:00,197 [INFO] Found 0 listings on WBM
+2024-11-25 17:35:00,245 [INFO] Found 0 listings on Degewo
+2024-11-25 17:35:00,427 [INFO] Found 0 listings on Howoge
+2024-11-25 17:36:00,016 [ERROR] Error fetching https://immosuche.wbm.de/de/search: Cannot connect to host immosuche.wbm.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:36:00,018 [INFO] Found 0 listings on WBM
+2024-11-25 17:36:00,019 [ERROR] Error fetching https://immosuche.gewobag.de/de/search: Cannot connect to host immosuche.gewobag.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:36:00,019 [INFO] Found 0 listings on Gewobag
+2024-11-25 17:36:00,023 [ERROR] Error fetching https://immosuche.gesobau.de/de/search: Cannot connect to host immosuche.gesobau.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:36:00,023 [INFO] Found 0 listings on Gesobau
+2024-11-25 17:36:00,023 [ERROR] Error fetching https://immosuche.stadtundland.de/de/search: Cannot connect to host immosuche.stadtundland.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:36:00,024 [INFO] Found 0 listings on StadtUndLand
+2024-11-25 17:36:00,251 [INFO] Found 0 listings on Degewo
+2024-11-25 17:36:00,267 [INFO] Found 0 listings on Howoge
+2024-11-25 17:41:59,894 [INFO] Script has started running.
+2024-11-25 17:42:00,015 [ERROR] Error fetching https://immosuche.stadtundland.de/de/search: Cannot connect to host immosuche.stadtundland.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:42:00,017 [INFO] Found 0 listings on StadtUndLand
+2024-11-25 17:42:00,017 [ERROR] Error fetching https://immosuche.wbm.de/de/search: Cannot connect to host immosuche.wbm.de:443 ssl:default [nodename nor servname provided, or not known]
+2024-11-25 17:42:00,017 [INFO] Found 0 listings on WBM
+2024-11-25 17:42:00,261 [INFO] Found 0 listings on Degewo
+2024-11-25 17:42:00,420 [INFO] Found 0 listings on Howoge
+2024-11-25 17:42:00,955 [INFO] Found 0 listings on Gewobag
+2024-11-25 17:42:00,992 [INFO] Found 0 listings on Gesobau
+2024-11-25 17:43:52,218 [INFO] Script has started running.
+2024-11-25 17:44:00,021 [ERROR] Exception in callback Cron.set_result(<_GatheringFu...ot defined")]>)
+handle: <Handle Cron.set_result(<_GatheringFu...ot defined")]>)>
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/asyncio/events.py", line 88, in _run
+    self._context.run(self._callback, *self._args)
+  File "/Users/akash/Code/BerlinDreamHomeBot/venv/lib/python3.12/site-packages/aiocron/__init__.py", line 112, in set_result
+    raise result
+  File "/Users/akash/Code/BerlinDreamHomeBot/scan.py", line 286, in job
+    results = await asyncio.gather(*tasks)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/akash/Code/BerlinDreamHomeBot/scan.py", line 191, in scan_wbm
+    html = await fetch(session, url, params=params)
+                                            ^^^^^^
+NameError: name 'params' is not defined
+2024-11-25 17:44:33,346 [INFO] Script has started running.
+2024-11-25 17:45:00,404 [INFO] Found 0 listings on WBM
+2024-11-25 17:46:00,333 [INFO] Found 0 listings on WBM
+2024-11-25 17:47:00,313 [INFO] Found 0 listings on WBM
+2024-11-25 17:47:56,480 [INFO] Script has started running.
+2024-11-25 17:48:00,347 [INFO] Found 1 listings on WBM
+2024-11-25 17:48:05,186 [INFO] HTTP Request: POST https://api.telegram.org/bot7797986839:AAGLKzs-aLpX-lWumV89l2nmOwPEPcmwz5A/sendMessage "HTTP/1.1 200 OK"
+2024-11-25 17:48:05,188 [INFO] Notification sent for listing wbm_72203
