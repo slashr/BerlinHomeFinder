@@ -77,7 +77,7 @@ async def scan_gewobag():
     logging.info("Starting Gewobag scan with direct URL")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)  # For debugging
+        browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
         
         # Set the consent cookie before navigating
