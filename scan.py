@@ -1,5 +1,6 @@
 import asyncio
 import aiohttp
+from playwright.async_api import async_playwright
 from aiohttp import ClientSession
 from bs4 import BeautifulSoup
 from telegram import Bot
@@ -63,126 +64,75 @@ async def fetch(session, url, params=None):
 
 # Scanning functions as defined above...
 async def scan_gesobau(session):
-    url = "https://www.gesobau.de/mieten/wohnungssuche/"
-    params = {
-        "size": 10,
-        "page": 1,
-        "property_type_id": 1,
-        "categories[]": 1,
-        "rooms_from": 2.5,
-        "qm_from": 62,
-    }
-    html = await fetch(session, url, params=params)
-    soup = BeautifulSoup(html, "lxml")
-    headers = HEADERS
-
-    listings = []
-    for listing in soup.find_all("div", class_="col-xs-12 search-list-entry"):
-        try:
-            rooms = float(listing.find("div", class_="rooms").text.strip().split()[0].replace(',', '.'))
-            sqm = float(listing.find("div", class_="area").text.strip().split()[0].replace(',', '.'))
-            link = listing.find("a", class_="detail-link")['href']
-            listing_id = link.split('/')[-1]
-            if rooms >= 2.5 and sqm >= 62:
-                listings.append({
-                    "id": f"gesobau_{listing_id}",
-                    "rooms": rooms,
-                    "sqm": sqm,
-                    "link": f"https://immosuche.gesobau.de{link}",
-                })
-        except Exception as e:
-            logging.error(f"Error parsing Gesobau listing: {e}")
-    logging.info(f"Found {len(listings)} listings on Gesobau")
-    return listings
+    return ("under construction")
 
 async def scan_degewo(session):
-    url = "https://immosuche.degewo.de/de/search"
-    params = {
-        "size": 10,
-        "page": 1,
-        "property_type_id": 1,
-        "categories[]": 1,
-        "rooms_from": 2.5,
-        "qm_from": 62,
-    }
-    html = await fetch(session, url, params=params)
-    soup = BeautifulSoup(html, "lxml")
-
-    listings = []
-    for listing in soup.find_all("div", class_="col-xs-12 search-list-entry"):
-        try:
-            rooms = float(listing.find("div", class_="rooms").text.strip().split()[0].replace(',', '.'))
-            sqm = float(listing.find("div", class_="area").text.strip().split()[0].replace(',', '.'))
-            link = listing.find("a", class_="detail-link")['href']
-            listing_id = link.split('/')[-1]
-            if rooms >= 2.5 and sqm >= 62:
-                listings.append({
-                    "id": f"degewo_{listing_id}",
-                    "rooms": rooms,
-                    "sqm": sqm,
-                    "link": f"https://immosuche.degewo.de{link}",
-                })
-        except Exception as e:
-            logging.error(f"Error parsing Degewo listing: {e}")
-    logging.info(f"Found {len(listings)} listings on Degewo")
-    return listings
+    return ("under construction")
 
 async def scan_howoge(session):
-    url = "https://www.howoge.de/wohnungen-gewerbe/wohnungssuche.html"
-    params = {
-        "rooms_from": 2.5,
-        "sqm_from": 62,
-    }
-    html = await fetch(session, url, params=params)
-    soup = BeautifulSoup(html, "lxml")
-    headers = HEADERS
+    return ("under construction")
 
+async def scan_gewobag():
     listings = []
-    for listing in soup.find_all("div", class_="result-item"):
-        try:
-            rooms = float(listing.find("div", class_="rooms").text.strip().split()[0].replace(',', '.'))
-            sqm = float(listing.find("div", class_="area").text.strip().split()[0].replace(',', '.'))
-            link = listing.find("a", class_="details-button")['href']
-            listing_id = link.split('/')[-1]
-            if rooms >= 2.5 and sqm >= 62:
-                listings.append({
-                    "id": f"howoge_{listing_id}",
-                    "rooms": rooms,
-                    "sqm": sqm,
-                    "link": f"https://www.howoge.de{link}",
-                })
-        except Exception as e:
-            logging.error(f"Error parsing HOWOGE listing: {e}")
-    logging.info(f"Found {len(listings)} listings on Howoge")
-    return listings
+    logging.info("Starting Gewobag scan with direct URL")
 
-async def scan_gewobag(session):
-    url = "https://www.gewobag.de/fuer-mieter-und-mietinteressenten/mietangebote/?objekttyp%5B%5D=wohnung"
-    params = {
-        "gesamtmiete_bis": 1500,
-        "zimmer_von": 2.5,
-        "gesamtflaeche_von": 62,
-    }
-    html = await fetch(session, url, params=params)
-    soup = BeautifulSoup(html, "lxml")
-    headers = HEADERS
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=False)  # For debugging
+        context = await browser.new_context()
+        
+        # Set the consent cookie before navigating
+        cookie = {
+            'name': 'borlabs-cookie',
+            'value': 'essential',
+            'domain': 'www.gewobag.de',
+            'path': '/',
+            'httpOnly': False,
+            'secure': True,
+            'sameSite': 'Lax',
+        }
+        await context.add_cookies([cookie])
 
-    listings = []
-    for listing in soup.find_all("div", class_="col-xs-12 search-list-entry"):
+        page = await context.new_page()
+
+        # Construct the URL with the desired filters
+        url = (
+            "https://www.gewobag.de/fuer-mieter-und-mietinteressenten/mietangebote/"
+            "?objekttyp%5B%5D=wohnung"
+            "&gesamtflaeche_von=62"
+            "&zimmer_von=2.5"
+        )
+
+        # Navigate to the URL
+        await page.goto(url)
+
+        # Handle the cookie consent overlay
         try:
-            rooms = float(listing.find("div", class_="rooms").text.strip().split()[0].replace(',', '.'))
-            sqm = float(listing.find("div", class_="area").text.strip().split()[0].replace(',', '.'))
-            link = listing.find("a", class_="detail-link")['href']
-            listing_id = link.split('/')[-1]
-            if rooms >= 2.5 and sqm >= 62:
-                listings.append({
-                    "id": f"gewobag_{listing_id}",
-                    "rooms": rooms,
-                    "sqm": sqm,
-                    "link": f"https://immosuche.gewobag.de{link}",
-                })
+            # Wait for the accept button to appear
+            await page.wait_for_selector('a._brlbs-btn-accept-all[data-cookie-accept-all]', timeout=5000)
+            # Click the accept button
+            await page.click('a._brlbs-btn-accept-all[data-cookie-accept-all]')
+            logging.info("Clicked on cookie consent accept button.")
+            # Wait for the overlay to disappear
+            await page.wait_for_selector('div._brlbs-cookie-banner', state='detached', timeout=5000)
         except Exception as e:
-            logging.error(f"Error parsing Gewobag listing: {e}")
+            logging.info(f"Cookie consent accept button not found or already accepted: {e}")
+            
+        # Wait for the results to load
+        try:
+            await page.wait_for_selector('div.rental-item', state='visible', timeout=10000)
+            logging.info("Rental items loaded.")
+        except Exception as e:
+            logging.error(f"Error waiting for rental items: {e}")
+            # Take a screenshot for debugging
+            await page.screenshot(path='gewobag_error.png')
+            await browser.close()
+            return listings
+
+        # Proceed with listing extraction as before
+        # ...
+
+        await browser.close()
+
     logging.info(f"Found {len(listings)} listings on Gewobag")
     return listings
 
@@ -233,38 +183,7 @@ async def scan_wbm(session):
     return listings
 
 async def scan_stadtundland(session):
-    url = "https://immosuche.stadtundland.de/de/search"
-    params = {
-        "size": 10,
-        "page": 1,
-        "property_type_id": 1,
-        "categories[]": 1,
-        "rooms_from": 2.5,
-        "qm_from": 62,
-    }
-    html = await fetch(session, url, params=params)
-    soup = BeautifulSoup(html, "lxml")
-    headers = HEADERS
-
-    listings = []
-    for listing in soup.find_all("div", class_="col-xs-12 search-list-entry"):
-        try:
-            rooms = float(listing.find("div", class_="rooms").text.strip().split()[0].replace(',', '.'))
-            sqm = float(listing.find("div", class_="area").text.strip().split()[0].replace(',', '.'))
-            link = listing.find("a", class_="detail-link")['href']
-            listing_id = link.split('/')[-1]
-            if rooms >= 2.5 and sqm >= 62:
-                listings.append({
-                    "id": f"stadtundland_{listing_id}",
-                    "rooms": rooms,
-                    "sqm": sqm,
-                    "link": f"https://immosuche.stadtundland.de{link}",
-                })
-        except Exception as e:
-            logging.error(f"Error parsing Stadt und Land listing: {e}")
-    logging.info(f"Found {len(listings)} listings on StadtUndLand")
-    return listings
-
+    return ("under construction")
 
 # Send notifications
 async def send_notifications(listings):
@@ -300,7 +219,7 @@ async def job():
             #scan_degewo(session),
             #scan_gesobau(session),
             #scan_howoge(session),
-            #scan_gewobag(session),
+            scan_gewobag(),
             scan_wbm(session),
             #scan_stadtundland(session),
         ]
