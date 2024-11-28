@@ -94,6 +94,9 @@ async def scan_gewobag():
 
         page = await context.new_page()
 
+        # Optional: Log console messages
+        page.on('console', lambda msg: logging.info(f"Console: {msg.text}"))
+
         # Construct the URL with the desired filters
         url = (
             "https://www.gewobag.de/fuer-mieter-und-mietinteressenten/mietangebote/"
@@ -108,28 +111,92 @@ async def scan_gewobag():
         # Handle the cookie consent overlay
         try:
             # Wait for the accept button to appear
-            await page.wait_for_selector('a._brlbs-btn-accept-all[data-cookie-accept-all]', timeout=5000)
+            await page.wait_for_selector('a._brlbs-btn-accept-all[data-cookie-accept-all]', timeout=10000)
             # Click the accept button
             await page.click('a._brlbs-btn-accept-all[data-cookie-accept-all]')
             logging.info("Clicked on cookie consent accept button.")
             # Wait for the overlay to disappear
-            await page.wait_for_selector('div._brlbs-cookie-banner', state='detached', timeout=5000)
+            await page.wait_for_selector('div#BorlabsCookieBox', state='detached', timeout=10000)
+            logging.info("Cookie consent overlay has been closed.")
         except Exception as e:
             logging.info(f"Cookie consent accept button not found or already accepted: {e}")
-            
+
+        # Wait for the page to load
+        await page.wait_for_load_state('networkidle')
+        await page.wait_for_timeout(2000)  # Wait for 2 seconds
+
         # Wait for the results to load
         try:
-            await page.wait_for_selector('div.rental-item', state='visible', timeout=10000)
-            logging.info("Rental items loaded.")
+            await page.wait_for_selector('article.angebot-big-box', state='attached', timeout=20000)
+            logging.info("Rental items are present in the DOM.")
         except Exception as e:
             logging.error(f"Error waiting for rental items: {e}")
-            # Take a screenshot for debugging
-            await page.screenshot(path='gewobag_error.png')
+            # Optionally, get the page content
+            content = await page.content()
+            with open('gewobag_page.html', 'w', encoding='utf-8') as f:
+                f.write(content)
             await browser.close()
             return listings
 
-        # Proceed with listing extraction as before
-        # ...
+        # Proceed with listing extraction
+        # Extract listings using BeautifulSoup
+        content = await page.content()
+        soup = BeautifulSoup(content, 'html.parser')
+
+        rental_items = soup.find_all('article', class_='angebot-big-box')
+        if not rental_items:
+            logging.info("No rental items found in the page content.")
+            await browser.close()
+            return listings
+
+        for item in rental_items:
+            try:
+                # Extract the listing ID
+                listing_id = item.get('id')
+                if not listing_id:
+                    continue
+
+                # Extract link
+                link_tag = item.find('a', class_='read-more-link')
+                link = link_tag['href']
+                if not link.startswith('http'):
+                    link = 'https://www.gewobag.de' + link
+
+                # Extract title
+                title_tag = item.find('h3', class_='angebot-title')
+                title = title_tag.get_text(strip=True)
+
+                # Extract address
+                address_tag = item.find('address')
+                address = address_tag.get_text(strip=True)
+
+                # Extract rooms and size
+                area_tr = item.find('tr', class_='angebot-area')
+                area_td = area_tr.find('td')
+                area_text = area_td.get_text(strip=True)
+                rooms_text, sqm_text = area_text.split('|')
+                rooms = float(rooms_text.strip().split(' ')[0].replace(',', '.'))
+                sqm = float(sqm_text.strip().replace('m²', '').replace(',', '.'))
+
+                # Extract rent
+                kosten_tr = item.find('tr', class_='angebot-kosten')
+                kosten_td = kosten_tr.find('td')
+                rent_text = kosten_td.get_text(strip=True)
+                rent = rent_text.replace('ab', '').replace('€', '').strip()
+
+                # Add the listing to the list
+                listings.append({
+                    "id": f"gewobag_{listing_id}",
+                    "rooms": rooms,
+                    "sqm": sqm,
+                    "link": link,
+                    "rent": rent,
+                    "title": title,
+                    "address": address,
+                })
+
+            except Exception as e:
+                logging.error(f"Error parsing Gewobag listing: {e}", exc_info=True)
 
         await browser.close()
 
