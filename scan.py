@@ -23,7 +23,7 @@ HEADERS = {
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
 # State management
-STATE_FILE = 'notified_listings.pkl'
+STATE_FILE = '/state/notified_listings.pkl'
 
 # Configure logging
 logging.basicConfig(
@@ -80,18 +80,6 @@ async def scan_gewobag():
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context()
         
-        # Set the consent cookie before navigating
-        cookie = {
-            'name': 'borlabs-cookie',
-            'value': 'essential',
-            'domain': 'www.gewobag.de',
-            'path': '/',
-            'httpOnly': False,
-            'secure': True,
-            'sameSite': 'Lax',
-        }
-        await context.add_cookies([cookie])
-
         page = await context.new_page()
 
         # Optional: Log console messages
