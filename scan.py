@@ -240,6 +240,111 @@ async def scan_wbm(session):
 async def scan_stadtundland(session):
     return ("under construction")
 
+async def scan_inberlinwohnen(session):
+    """
+    Scans the inberlinwohnen.de Wohnungsfinder page for listings.
+    Extracts details from each listing (using the <li> elements within
+    the <ul id="_tb_relevant_results"> container) such as:
+      - Listing ID (prefixed with "inberlinwohnen_")
+      - Number of rooms (from the first <strong> in the headline)
+      - Area in m² (from the second <strong>)
+      - Cold rent (from the third <strong>)
+      - Details link (from the anchor with title containing "detailierte Wohnungsanzeige")
+      - Title and address (extracted from the headline text split by "|")
+    Only listings with 3 or more rooms and a cold rent up to 1,400 € are returned.
+    """
+    url = "https://inberlinwohnen.de/wohnungsfinder/"
+    html = await fetch(session, url)
+    if not html:
+        logging.info("No HTML retrieved from inberlinwohnen page.")
+        return []
+    soup = BeautifulSoup(html, "html.parser")
+    listings = []
+    
+    # Locate the container with the relevant results
+    results_ul = soup.find("ul", id="_tb_relevant_results", class_="remember-list")
+    if not results_ul:
+        logging.info("No results container found on inberlinwohnen page.")
+        return listings
+
+    # Each listing is in an <li> with class "tb-merkflat ipg"
+    listing_items = results_ul.find_all("li", class_="tb-merkflat ipg")
+    for item in listing_items:
+        try:
+            listing_id = item.get("id")
+            if not listing_id:
+                continue
+            full_id = f"inberlinwohnen_{listing_id}"
+            
+            # Extract the headline <h3> element
+            h3 = item.find("h3")
+            if not h3:
+                continue
+            # The headline typically contains details like:
+            # "3 Zimmer, 71,82 m², 628,86 € | Freienwalder Str. 22, Alt-Hohenschönhausen"
+            headline_text = h3.get_text(separator=" ", strip=True)
+            parts = headline_text.split("|")
+            if len(parts) >= 2:
+                left_part = parts[0].strip()
+                address = parts[1].strip()
+            else:
+                left_part = headline_text
+                address_tag = item.find("a", title="Auf Karte anzeigen")
+                address = address_tag.get_text(strip=True) if address_tag else ""
+            
+            # Extract numbers from the <strong> tags (rooms, area, rent)
+            strong_tags = h3.find_all("strong")
+            if len(strong_tags) < 3:
+                continue
+            try:
+                rooms = float(strong_tags[0].get_text().replace(',', '.'))
+                area = float(strong_tags[1].get_text().replace(',', '.'))
+                rent_text = strong_tags[2].get_text(strip=True)
+            except Exception as e:
+                logging.error(f"Error converting numbers in listing {full_id}: {e}")
+                continue
+
+            # Filter out listings with fewer than 3 rooms
+            if rooms < 3:
+                continue
+
+            # Normalize and check rent; remove currency symbols and extra text.
+            rent_normalized = rent_text.replace('€', '').replace('ab', '').strip()
+            # Remove thousand separators and convert decimal comma to dot.
+            rent_normalized = rent_normalized.replace('.', '').replace(',', '.')
+            try:
+                rent_val = float(rent_normalized)
+            except Exception as e:
+                logging.error(f"Error converting rent in listing {full_id}: {e}")
+                continue
+            # Filter out if rent is above 1400 euros.
+            if rent_val > 1400:
+                continue
+
+            # Extract the details link (anchor with title containing "detailierte Wohnungsanzeige")
+            details_link_tag = item.find("a", title=lambda t: t and "detailierte Wohnungsanzeige" in t)
+            if not details_link_tag:
+                continue
+            link = details_link_tag.get("href")
+            if not link.startswith("http"):
+                link = "https://inberlinwohnen.de" + link
+
+            listings.append({
+                "id": full_id,
+                "rooms": rooms,
+                "sqm": area,
+                "rent": rent_text,
+                "link": link,
+                "title": headline_text,
+                "address": address,
+            })
+        except Exception as e:
+            logging.error(f"Error parsing inberlinwohnen listing: {e}", exc_info=True)
+
+    logging.info(f"Found {len(listings)} listings on inberlinwohnen meeting criteria")
+    return listings
+
+
 # Send notifications
 async def send_notifications(listings):
     new_notifications = False
@@ -276,6 +381,7 @@ async def job():
             #scan_howoge(session),
             scan_gewobag(),
             scan_wbm(session),
+            scan_inberlinwohnen(session),
             #scan_stadtundland(session),
         ]
         results = await asyncio.gather(*tasks)
