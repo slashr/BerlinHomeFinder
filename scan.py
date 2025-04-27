@@ -8,7 +8,7 @@ import os
 import pickle
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, UTC
 
 import aiocron
 import aiohttp
@@ -311,9 +311,8 @@ async def job() -> None:
         all_results: list[list[dict]] = await asyncio.gather(*tasks)
         flat: list[dict] = [item for sub in all_results for item in sub]
         await send_notifications(flat)
-        logging.info("Job finished at %s with %d total listings",
-                     datetime.utcnow().isoformat(timespec='seconds'), len(flat))
-
+        timestamp = datetime.now(UTC).isoformat(timespec="seconds")
+        logging.info("Job finished at %s with %d total listings", timestamp, len(flat))
 
 # Wrapper skips a run if the previous one is still active
 async def job_wrapper():
