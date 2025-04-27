@@ -287,25 +287,20 @@ SCANNERS = [
 bot = Bot(token=TG_TOKEN)
 
 async def send_notifications(listings: List[Listing]) -> None:
-    global notified
     fresh = [l for l in listings if l["id"] not in notified]
     if not fresh:
         return
-
-    async def _send(l: Listing):
-        msg = (
-            f"🏠 *New apartment!*\\n"
-            f"🛏 {l['rooms']} rooms – {l['sqm']} m²\n"
-            f"🔗 [Listing]({l['link']})"
-        )
+    for l in fresh:          # ← sequential loop
         await bot.send_message(
             chat_id=TG_CHAT,
-            text=msg,
+            text=(
+                f"🏠 *New apartment found!*\n"
+                f"🛏 {l['rooms']} rooms – {l['sqm']} m²\n"
+                f"🔗 [Listing]({l['link']})"
+            ),
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=True,
         )
-
-    await asyncio.gather(*(_send(l) for l in fresh))
     notified.update(l["id"] for l in fresh)
     save_state(notified)
     log.info("Sent %d Telegram messages", len(fresh))
