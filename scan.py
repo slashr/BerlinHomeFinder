@@ -313,6 +313,16 @@ async def job() -> None:
         log.warning("Previous run still active — skipping")
         return
     async with JOB_LOCK:
+        # decide dynamically which scanners to call
+        scanners = [
+            scan_gewobag,
+            scan_wbm,
+        ]
+        # call inberlinwohnen only when the current minute is a multiple of 3
+        # in other words, scan inberlinwohnen every 3 minutes instead of every 1 minute
+        if datetime.utcnow().minute % 3 == 0:
+            scanners.append(scan_inberlinwohnen)
+
         results = await asyncio.gather(*(scan() for scan in SCANNERS))
         flat = [item for sub in results for item in sub]
         await send_notifications(flat)
