@@ -4,3 +4,4 @@ python-telegram-bot
 aiocron
 aiohttp
 playwright
+pytest  # dev
