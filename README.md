@@ -27,3 +27,6 @@ docker build -t berlin-home-finder .
 docker run -e TELEGRAM_BOT_TOKEN=... -e TELEGRAM_USER_ID=... berlin-home-finder
 ```
 
+## License
+
+This project is licensed under the [MIT License](LICENSE).
