@@ -169,7 +169,7 @@ async def scan_gewobag() -> List[Listing]:
             except Exception:
                 pass
             await page.wait_for_load_state("networkidle")
-            soup = BeautifulSoup(await page.content(), "html.parser")
+            soup = BeautifulSoup(await page.content(), "lxml")
             for art in soup.select("article.angebot-big-box"):
                 try:
                     lid = art.get("id")
@@ -206,7 +206,7 @@ async def scan_wbm() -> List[Listing]:
     html = await fetch("https://www.wbm.de/wohnungen-berlin/angebote/")
     if not html:
         return []
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "lxml")
     listings: List[Listing] = []
     for div in soup.select("div.row.openimmo-search-list-item"):
         try:
@@ -230,7 +230,7 @@ async def scan_inberlinwohnen() -> List[Listing]:
     html = await fetch("https://inberlinwohnen.de/wohnungsfinder/")
     if not html:
         return []
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "lxml")
     ul = soup.find("ul", id="_tb_relevant_results")
     if not ul:
         return []
