@@ -323,7 +323,7 @@ async def job() -> None:
         if datetime.utcnow().minute % 3 == 0:
             scanners.append(scan_inberlinwohnen)
 
-        results = await asyncio.gather(*(scan() for scan in SCANNERS))
+        results = await asyncio.gather(*(scan() for scan in scanners))
         flat = [item for sub in results for item in sub]
         await send_notifications(flat)
         log.info(

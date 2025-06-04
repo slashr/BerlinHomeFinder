@@ -1,3 +1,5 @@
 __pycache*
 apartment_scanner.log
 venv/*
+
+notified.pkl
