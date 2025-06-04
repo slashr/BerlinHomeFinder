@@ -6,3 +6,4 @@ schedule
 aiocron
 aiohttp
 playwright
+pytest  # dev
