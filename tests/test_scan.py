@@ -64,6 +64,48 @@ def test_scan_gewobag(monkeypatch):
     ]
 
 
+def test_scan_gewobag_relative(monkeypatch):
+    html = """
+    <article id='b1' class='angebot-big-box'>
+        <h3 class='angebot-title'>Noch eine</h3>
+        <address>Berlin</address>
+        <table><tr class='angebot-area'><td>3 Zimmer | 66 m²</td></tr></table>
+        <a class='read-more-link' href='../flat2'>Mehr</a>
+    </article>
+    """
+
+    class DummyPage:
+        async def goto(self, url):
+            pass
+        async def wait_for_selector(self, selector, timeout=5000):
+            pass
+        async def click(self, selector):
+            pass
+        async def wait_for_load_state(self, state):
+            pass
+        async def content(self):
+            return html
+
+    class DummyContext:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+        async def new_page(self):
+            return DummyPage()
+
+    class DummyBrowser:
+        async def new_context(self):
+            return DummyContext()
+
+    async def fake_ensure_browser():
+        return DummyBrowser()
+
+    monkeypatch.setattr(scan, "ensure_browser", fake_ensure_browser)
+    listings = asyncio.run(scan.scan_gewobag())
+    assert listings[0]["link"] == "https://www.gewobag.de/flat2"
+
+
 def test_scan_wbm(monkeypatch):
     html = """
     <div class='row openimmo-search-list-item' data-uid='u1'>
