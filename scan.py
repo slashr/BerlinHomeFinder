@@ -148,6 +148,7 @@ class Listing(TypedDict):
     rent: str | None
     title: str | None
     address: str | None
+    provider: str
 
 # ──────────────────────────  SCANNERS  ───────────────────────────── #
 
@@ -193,6 +194,7 @@ async def scan_gewobag() -> List[Listing]:
                             rent=None,
                             title=art.select_one("h3.angebot-title").get_text(strip=True),
                             address=art.select_one("address").get_text(strip=True),
+                            provider="Gewobag",
                         )
                     )
                 except Exception:
@@ -219,8 +221,18 @@ async def scan_wbm() -> List[Listing]:
             link = div.find("a", title="Details")["href"]
             if not link.startswith("http"):
                 link = "https://www.wbm.de" + link
-            listings.append(Listing(id=f"wbm_{lid}", rooms=rooms, sqm=sqm,
-                                    link=link, rent=None, title=None, address=None))
+            listings.append(
+                Listing(
+                    id=f"wbm_{lid}",
+                    rooms=rooms,
+                    sqm=sqm,
+                    link=link,
+                    rent=None,
+                    title=None,
+                    address=None,
+                    provider="WBM",
+                )
+            )
         except Exception:
             log.debug("WBM parse error", exc_info=True)
     log.info("[WBM] %d listings", len(listings))
@@ -259,6 +271,7 @@ async def scan_inberlinwohnen() -> List[Listing]:
                     rent=f"{rent_val:.0f}",
                     title=li.find("h3").get_text(strip=True),
                     address=None,
+                    provider="inBerlinWohnen",
                 )
             )
         except Exception:
@@ -291,10 +304,12 @@ async def send_notifications(listings: List[Listing]) -> None:
     if not fresh:
         return
     for l in fresh:          # ← sequential loop
+        snippet = l.get("title") or l.get("address") or l["link"].split("/")[-1]
+        snippet = snippet[:50]
         await bot.send_message(
             chat_id=TG_CHAT,
             text=(
-                f"🏠 *New apartment found!*\n"
+                f"🏠 *{l['provider']}*: {snippet}\n"
                 f"🛏 {l['rooms']} rooms – {l['sqm']} m²\n"
                 f"🔗 [Listing]({l['link']})"
             ),
