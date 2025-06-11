@@ -183,7 +183,8 @@ async def scan_gewobag() -> List[Listing]:
                         continue
                     link = art.select_one("a.read-more-link")["href"]
                     if not link.startswith("http"):
-                        link = "https://www.gewobag.de" + link
+                        from urllib.parse import urljoin
+                        link = urljoin("https://www.gewobag.de", link)
                     listings.append(
                         Listing(
                             id=f"gewobag_{lid}",
