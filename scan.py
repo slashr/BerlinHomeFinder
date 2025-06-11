@@ -57,8 +57,9 @@ HEADERS = {
 
 # ───────────────────────────  LOGGING  ──────────────────────────── #
 
+log_level = logging.DEBUG if os.getenv("DEBUG") else logging.INFO
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler()],
 )
@@ -184,16 +185,22 @@ async def scan_gewobag() -> List[Listing]:
                     if not link.startswith("http"):
                         from urllib.parse import urljoin
                         link = urljoin("https://www.gewobag.de", link)
-                    listings.append(
-                        Listing(
-                            id=f"gewobag_{lid}",
-                            rooms=rooms,
-                            sqm=sqm,
-                            link=link,
-                            rent=None,
-                            title=art.select_one("h3.angebot-title").get_text(strip=True),
-                            address=art.select_one("address").get_text(strip=True),
-                        )
+                    listing = Listing(
+                        id=f"gewobag_{lid}",
+                        rooms=rooms,
+                        sqm=sqm,
+                        link=link,
+                        rent=None,
+                        title=art.select_one("h3.angebot-title").get_text(strip=True),
+                        address=art.select_one("address").get_text(strip=True),
+                    )
+                    listings.append(listing)
+                    log.debug(
+                        "[Gewobag] parsed %s: %.1f rooms, %.1f m² → %s",
+                        listing["id"],
+                        listing["rooms"],
+                        listing["sqm"],
+                        listing["link"],
                     )
                 except Exception:
                     log.debug("Gewobag parse error", exc_info=True)
@@ -219,8 +226,23 @@ async def scan_wbm() -> List[Listing]:
             link = div.find("a", title="Details")["href"]
             if not link.startswith("http"):
                 link = "https://www.wbm.de" + link
-            listings.append(Listing(id=f"wbm_{lid}", rooms=rooms, sqm=sqm,
-                                    link=link, rent=None, title=None, address=None))
+            listing = Listing(
+                id=f"wbm_{lid}",
+                rooms=rooms,
+                sqm=sqm,
+                link=link,
+                rent=None,
+                title=None,
+                address=None,
+            )
+            listings.append(listing)
+            log.debug(
+                "[WBM] parsed %s: %.1f rooms, %.1f m² → %s",
+                listing["id"],
+                listing["rooms"],
+                listing["sqm"],
+                listing["link"],
+            )
         except Exception:
             log.debug("WBM parse error", exc_info=True)
     log.info("[WBM] %d listings", len(listings))
@@ -243,23 +265,34 @@ async def scan_inberlinwohnen() -> List[Listing]:
                 continue
             rooms = float(st[0].text.replace(",", "."))
             sqm = float(st[1].text.replace(",", "."))
-            rent_val = float(st[2].text.replace("€", "").replace("ab", "")
-                             .replace(".", "").replace(",", "."))
+            rent_val = float(
+                st[2]
+                .text.replace("€", "")
+                .replace("ab", "")
+                .replace(".", "")
+                .replace(",", ".")
+            )
             if rooms < 3 or rent_val > MAX_RENT_INBERLIN:
                 continue
             link = li.find("a", title=lambda t: t and "detailierte" in t)["href"]
             if not link.startswith("http"):
                 link = "https://inberlinwohnen.de" + link
-            listings.append(
-                Listing(
-                    id=f"inberlinwohnen_{lid}",
-                    rooms=rooms,
-                    sqm=sqm,
-                    link=link,
-                    rent=f"{rent_val:.0f}",
-                    title=li.find("h3").get_text(strip=True),
-                    address=None,
-                )
+            listing = Listing(
+                id=f"inberlinwohnen_{lid}",
+                rooms=rooms,
+                sqm=sqm,
+                link=link,
+                rent=f"{rent_val:.0f}",
+                title=li.find("h3").get_text(strip=True),
+                address=None,
+            )
+            listings.append(listing)
+            log.debug(
+                "[inberlinwohnen] parsed %s: %.1f rooms, %.1f m² → %s",
+                listing["id"],
+                listing["rooms"],
+                listing["sqm"],
+                listing["link"],
             )
         except Exception:
             log.debug("inBerlin parse error", exc_info=True)
@@ -289,8 +322,10 @@ bot = Bot(token=TG_TOKEN)
 async def send_notifications(listings: List[Listing]) -> None:
     fresh = [l for l in listings if l["id"] not in notified]
     if not fresh:
+        log.info("No new listings to notify")
         return
-    for l in fresh:          # ← sequential loop
+    log.info("Sending %d new Telegram messages", len(fresh))
+    for l in fresh:  # ← sequential loop
         await bot.send_message(
             chat_id=TG_CHAT,
             text=(
@@ -300,6 +335,13 @@ async def send_notifications(listings: List[Listing]) -> None:
             ),
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=True,
+        )
+        log.info(
+            "Alert sent for %s (%.1f rooms, %.1f m²) → %s",
+            l["id"],
+            l["rooms"],
+            l["sqm"],
+            l["link"],
         )
     notified.update(l["id"] for l in fresh)
     save_state(notified)
