@@ -158,8 +158,7 @@ async def scan_gewobag() -> List[Listing]:
         browser = await ensure_browser()
         async with (await browser.new_context()) as ctx:
             page = await ctx.new_page()
-            url = ("https://www.gewobag.de/fuer-mieter-und-mietinteressenten/mietangebote/"
-                   "?objekttyp%5B%5D=wohnung&gesamtflaeche_von=62&zimmer_von=2.5")
+            url = ("https://www.gewobag.de/fuer-mietinteressentinnen/mietangebote/?bezirke%5B%5D=friedrichshain-kreuzberg&bezirke%5B%5D=friedrichshain-kreuzberg-friedrichshain&bezirke%5B%5D=friedrichshain-kreuzberg-kreuzberg&bezirke%5B%5D=mitte&bezirke%5B%5D=mitte-gesundbrunnen&bezirke%5B%5D=mitte-moabit&bezirke%5B%5D=mitte-wedding&bezirke%5B%5D=pankow-pankow&bezirke%5B%5D=pankow-prenzlauer-berg&bezirke%5B%5D=reinickendorf-reinickendorf&objekttyp%5B%5D=wohnung&gesamtmiete_von=&gesamtmiete_bis=&gesamtflaeche_von=60&gesamtflaeche_bis=&zimmer_von=3&zimmer_bis=&sort-by=")
             await page.goto(url)
             try:
                 await page.wait_for_selector(
