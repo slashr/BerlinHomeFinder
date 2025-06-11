@@ -60,6 +60,7 @@ def test_scan_gewobag(monkeypatch):
             "rent": None,
             "title": "Top Wohnung",
             "address": "Berlin",
+            "provider": "Gewobag",
         }
     ]
 
@@ -129,6 +130,7 @@ def test_scan_wbm(monkeypatch):
             "rent": None,
             "title": None,
             "address": None,
+            "provider": "WBM",
         }
     ]
 
@@ -160,6 +162,7 @@ def test_scan_inberlinwohnen(monkeypatch):
             "rent": "1200",
             "title": "Feine Wohnung",
             "address": None,
+            "provider": "inBerlinWohnen",
         }
     ]
 
