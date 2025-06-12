@@ -38,7 +38,7 @@ from telegram.constants import ParseMode
 
 # ───────────────────────────  CONFIG  ───────────────────────────── #
 
-CRON_SCHEDULE = "*/1 * * * *"    # every minute
+CRON_SCHEDULE = "*/2 * * * *"    # every two minutes
 MIN_ROOMS = 2.5
 MIN_SQM = 62
 MAX_RENT_INBERLIN = 1600         # €
@@ -332,11 +332,8 @@ async def job() -> None:
         scanners = [
             scan_gewobag,
             scan_wbm,
+            scan_inberlinwohnen
         ]
-        # call inberlinwohnen only when the current minute is a multiple of 3
-        # in other words, scan inberlinwohnen every 3 minutes instead of every 1 minute
-        if datetime.now(timezone.utc).minute % 3 == 0:
-            scanners.append(scan_inberlinwohnen)
 
         tasks = [asyncio.create_task(scan()) for scan in scanners]
         flat: List[Listing] = []
