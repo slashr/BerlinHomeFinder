@@ -323,9 +323,12 @@ async def job() -> None:
         if datetime.now(timezone.utc).minute % 3 == 0:
             scanners.append(scan_inberlinwohnen)
 
-        results = await asyncio.gather(*(scan() for scan in scanners))
-        flat = [item for sub in results for item in sub]
-        await send_notifications(flat)
+        tasks = [asyncio.create_task(scan()) for scan in scanners]
+        flat: List[Listing] = []
+        for coro in asyncio.as_completed(tasks):
+            listings = await coro
+            flat.extend(listings)
+            await send_notifications(listings)
         log.info(
             "Run finished at %s (%d listings total)",
             datetime.now(timezone.utc).isoformat(timespec="seconds"),
