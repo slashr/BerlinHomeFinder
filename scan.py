@@ -262,6 +262,8 @@ async def scan_inberlinwohnen() -> List[Listing]:
             link = li.find("a", title=lambda t: t and "detailierte" in t)["href"]
             if not link.startswith("http"):
                 link = "https://inberlinwohnen.de" + link
+            if "wbm.de" in link:
+                continue  # skip WBM entries to avoid duplicates
             listings.append(
                 Listing(
                     id=f"inberlinwohnen_{lid}",
