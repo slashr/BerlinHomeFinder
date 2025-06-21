@@ -188,6 +188,27 @@ def test_scan_inberlinwohnen_skip_wbm(monkeypatch):
     assert listings == []
 
 
+def test_scan_inberlinwohnen_skip_gewobag(monkeypatch):
+    html = """
+    <ul id='_tb_relevant_results'>
+        <li id='b3' class='tb-merkflat'>
+            <a title='detailierte Ansicht' href='https://www.gewobag.de/foo'>Link</a>
+            <h3>Gewobag</h3>
+            <strong>3</strong>
+            <strong>70</strong>
+            <strong>ab 1200 €</strong>
+        </li>
+    </ul>
+    """
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+    listings = asyncio.run(scan.scan_inberlinwohnen())
+    assert listings == []
+
+
 def test_scan_stubs():
     assert asyncio.run(scan.scan_gesobau()) == []
     assert asyncio.run(scan.scan_degewo()) == []
