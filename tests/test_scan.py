@@ -23,7 +23,7 @@ def test_scan_gewobag(monkeypatch):
     """
 
     class DummyPage:
-        async def goto(self, url):
+        async def goto(self, url, **kwargs):
             pass
         async def wait_for_selector(self, selector, timeout=5000):
             pass
@@ -76,7 +76,7 @@ def test_scan_gewobag_relative(monkeypatch):
     """
 
     class DummyPage:
-        async def goto(self, url):
+        async def goto(self, url, **kwargs):
             pass
         async def wait_for_selector(self, selector, timeout=5000):
             pass
@@ -105,6 +105,98 @@ def test_scan_gewobag_relative(monkeypatch):
     monkeypatch.setattr(scan, "ensure_browser", fake_ensure_browser)
     listings = asyncio.run(scan.scan_gewobag())
     assert listings[0]["link"] == "https://www.gewobag.de/flat2"
+
+
+def test_scan_gewobag_retry_success(monkeypatch):
+    html = """
+    <article id='c1' class='angebot-big-box'>
+        <h3 class='angebot-title'>Retry ok</h3>
+        <address>Berlin</address>
+        <table><tr class='angebot-area'><td>3 Zimmer | 65 m²</td></tr></table>
+        <a class='read-more-link' href='/flat3'>Mehr</a>
+    </article>
+    """
+
+    attempts = {"count": 0}
+
+    class DummyPage:
+        async def goto(self, url, **kwargs):
+            attempts["count"] += 1
+            if attempts["count"] < 2:
+                raise RuntimeError("fail")
+        async def wait_for_selector(self, selector, timeout=5000):
+            pass
+        async def click(self, selector):
+            pass
+        async def wait_for_load_state(self, state):
+            pass
+        async def content(self):
+            return html
+
+    class DummyContext:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+        async def new_page(self):
+            return DummyPage()
+
+    class DummyBrowser:
+        async def new_context(self):
+            return DummyContext()
+
+    async def fake_ensure_browser():
+        return DummyBrowser()
+
+    async def fake_sleep(_):
+        pass
+
+    monkeypatch.setattr(scan, "ensure_browser", fake_ensure_browser)
+    monkeypatch.setattr(scan.asyncio, "sleep", fake_sleep)
+    listings = asyncio.run(scan.scan_gewobag())
+    assert attempts["count"] == 2
+    assert listings and listings[0]["id"] == "gewobag_c1"
+
+
+def test_scan_gewobag_retry_fail(monkeypatch):
+    attempts = {"count": 0}
+
+    class DummyPage:
+        async def goto(self, url, **kwargs):
+            attempts["count"] += 1
+            raise RuntimeError("fail")
+        async def wait_for_selector(self, selector, timeout=5000):
+            pass
+        async def click(self, selector):
+            pass
+        async def wait_for_load_state(self, state):
+            pass
+        async def content(self):
+            return ""
+
+    class DummyContext:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+        async def new_page(self):
+            return DummyPage()
+
+    class DummyBrowser:
+        async def new_context(self):
+            return DummyContext()
+
+    async def fake_ensure_browser():
+        return DummyBrowser()
+
+    async def fake_sleep(_):
+        pass
+
+    monkeypatch.setattr(scan, "ensure_browser", fake_ensure_browser)
+    monkeypatch.setattr(scan.asyncio, "sleep", fake_sleep)
+    listings = asyncio.run(scan.scan_gewobag())
+    assert attempts["count"] == 3
+    assert listings == []
 
 
 def test_scan_wbm(monkeypatch):
