@@ -55,6 +55,8 @@ HEADERS = {
         "Mozilla/5.0 (X11; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0"
 }
 
+GEWOBAG_TIMEOUT = 15_000  # ms
+
 # ───────────────────────────  LOGGING  ──────────────────────────── #
 
 logging.basicConfig(
@@ -160,7 +162,21 @@ async def scan_gewobag() -> List[Listing]:
         async with (await browser.new_context()) as ctx:
             page = await ctx.new_page()
             url = ("https://www.gewobag.de/fuer-mietinteressentinnen/mietangebote/?bezirke%5B%5D=friedrichshain-kreuzberg&bezirke%5B%5D=friedrichshain-kreuzberg-friedrichshain&bezirke%5B%5D=friedrichshain-kreuzberg-kreuzberg&bezirke%5B%5D=mitte&bezirke%5B%5D=mitte-gesundbrunnen&bezirke%5B%5D=mitte-moabit&bezirke%5B%5D=mitte-wedding&bezirke%5B%5D=pankow-pankow&bezirke%5B%5D=pankow-prenzlauer-berg&bezirke%5B%5D=reinickendorf-reinickendorf&objekttyp%5B%5D=wohnung&gesamtmiete_von=&gesamtmiete_bis=&gesamtflaeche_von=60&gesamtflaeche_bis=&zimmer_von=3&zimmer_bis=&sort-by=")
-            await page.goto(url)
+            for attempt in range(3):
+                try:
+                    await page.goto(
+                        url,
+                        timeout=GEWOBAG_TIMEOUT,
+                        wait_until="networkidle",
+                    )
+                    break
+                except Exception as exc:
+                    log.warning(
+                        "Gewobag navigation failed (%d/3): %s", attempt + 1, exc
+                    )
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(attempt + 1)
             try:
                 await page.wait_for_selector(
                     "a._brlbs-btn-accept-all[data-cookie-accept-all]", timeout=5000
