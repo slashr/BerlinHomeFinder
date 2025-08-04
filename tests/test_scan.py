@@ -160,6 +160,7 @@ def test_scan_gewobag_retry_success(monkeypatch):
 
 def test_scan_gewobag_retry_fail(monkeypatch):
     attempts = {"count": 0}
+    error_calls = []
 
     class DummyPage:
         async def goto(self, url, **kwargs):
@@ -192,11 +193,17 @@ def test_scan_gewobag_retry_fail(monkeypatch):
     async def fake_sleep(_):
         pass
 
+    def fake_error(msg, *args, **kwargs):
+        error_calls.append(kwargs.get("exc_info"))
+
     monkeypatch.setattr(scan, "ensure_browser", fake_ensure_browser)
     monkeypatch.setattr(scan.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(scan.log, "error", fake_error)
+
     listings = asyncio.run(scan.scan_gewobag())
     assert attempts["count"] == 3
     assert listings == []
+    assert error_calls == [None]
 
 
 def test_scan_wbm(monkeypatch):
