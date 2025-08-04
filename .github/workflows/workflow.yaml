@@ -35,7 +35,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push (tag = Git tag, e.g., v1.4.0)
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
