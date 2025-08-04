@@ -175,7 +175,8 @@ async def scan_gewobag() -> List[Listing]:
                         "Gewobag navigation failed (%d/3): %s", attempt + 1, exc
                     )
                     if attempt == 2:
-                        raise
+                        log.error("Gewobag navigation failed after retries: %s", exc)
+                        return []
                     await asyncio.sleep(attempt + 1)
             try:
                 await page.wait_for_selector(
