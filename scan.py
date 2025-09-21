@@ -21,6 +21,7 @@ STATE_FILE           (optional) where to store seen-IDs, default ./notified.pkl
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import os
 import pickle
@@ -318,21 +319,59 @@ SCANNERS = [
 
 bot = Bot(token=TG_TOKEN)
 
+def _format_number(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _format_rent(rent: str | None) -> str | None:
+    if not rent:
+        return None
+    rent_text = rent.strip()
+    if not rent_text:
+        return None
+    if "€" not in rent_text and "EUR" not in rent_text and not rent_text.endswith("€"):
+        rent_text = f"{rent_text} €"
+    return rent_text
+
+
+def build_message(listing: Listing) -> str:
+    snippet_src = (
+        listing.get("title")
+        or listing.get("address")
+        or listing["link"].rstrip("/").split("/")[-1]
+    )
+    snippet = html.escape(snippet_src[:80])
+    provider = html.escape(listing["provider"])
+    lines = [f"🏠 <b>{provider}</b>: {snippet}"]
+
+    location = listing.get("address")
+    if location:
+        lines.append(f"📍 {html.escape(location)}")
+
+    rooms = _format_number(listing["rooms"])
+    sqm = _format_number(listing["sqm"])
+    lines.append(f"🛏 {rooms} rooms – {sqm} m²")
+
+    rent_text = _format_rent(listing.get("rent"))
+    if rent_text:
+        lines.append(f"💶 {html.escape(rent_text)}")
+
+    link = html.escape(listing["link"], quote=True)
+    lines.append(f"🔗 <a href=\"{link}\">Listing</a>")
+    return "\n".join(lines)
+
+
 async def send_notifications(listings: List[Listing]) -> None:
     fresh = [l for l in listings if l["id"] not in notified]
     if not fresh:
         return
     for l in fresh:          # ← sequential loop
-        snippet = l.get("title") or l.get("address") or l["link"].split("/")[-1]
-        snippet = snippet[:50]
         await bot.send_message(
             chat_id=TG_CHAT,
-            text=(
-                f"🏠 *{l['provider']}*: {snippet}\n"
-                f"🛏 {l['rooms']} rooms – {l['sqm']} m²\n"
-                f"🔗 [Listing]({l['link']})"
-            ),
-            parse_mode=ParseMode.MARKDOWN,
+            text=build_message(l),
+            parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
         )
     notified.update(l["id"] for l in fresh)
