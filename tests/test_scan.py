@@ -300,3 +300,41 @@ def test_build_wbm_listing_id_stable():
     first = scan.build_wbm_listing_id(link, 3.0, 70.0)
     second = scan.build_wbm_listing_id(link, 3.00, 70.00)
     assert first == second
+
+
+def test_build_message_with_location_and_rent():
+    listing = {
+        "id": "demo_1",
+        "rooms": 3.0,
+        "sqm": 72.0,
+        "link": "https://example.com/listing",
+        "rent": "1450",
+        "title": "Helle Wohnung",
+        "address": "Prenzlauer Berg",
+        "provider": "DemoProvider",
+    }
+
+    message = scan.build_message(listing)
+
+    assert "Prenzlauer Berg" in message
+    assert "1450 €" in message
+    assert "<b>DemoProvider</b>" in message
+
+
+def test_build_message_without_location_or_rent():
+    listing = {
+        "id": "demo_2",
+        "rooms": 2.5,
+        "sqm": 65.0,
+        "link": "https://example.com/listing2",
+        "rent": None,
+        "title": "Schöne Wohnung",
+        "address": None,
+        "provider": "DemoProvider",
+    }
+
+    message = scan.build_message(listing)
+
+    assert "📍" not in message
+    assert "💶" not in message
+    assert "Listing</a>" in message
