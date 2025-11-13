@@ -21,6 +21,7 @@ STATE_FILE           (optional) where to store seen-IDs, default ./notified.pkl
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import pickle
@@ -234,13 +235,13 @@ async def scan_wbm() -> List[Listing]:
                         .replace("m²", "").replace(",", ".").strip())
             if rooms < MIN_ROOMS or sqm < MIN_SQM:
                 continue
-            lid = div["data-uid"]
             link = div.find("a", title="Details")["href"]
             if not link.startswith("http"):
                 link = "https://www.wbm.de" + link
+            lid = build_wbm_listing_id(link, rooms, sqm)
             listings.append(
                 Listing(
-                    id=f"wbm_{lid}",
+                    id=lid,
                     rooms=rooms,
                     sqm=sqm,
                     link=link,
@@ -318,6 +319,20 @@ SCANNERS = [
 
 bot = Bot(token=TG_TOKEN)
 
+
+def build_wbm_listing_id(link: str, rooms: float, sqm: float) -> str:
+    """Return a stable WBM identifier independent of their rotating IDs."""
+    slug = link.rstrip("/").split("/")[-1] or "listing"
+
+    def _fmt(value: float) -> str:
+        text = f"{value:.2f}".rstrip("0").rstrip(".")
+        return text or "0"
+
+    digest_source = f"{slug}|{_fmt(rooms)}|{_fmt(sqm)}"
+    digest = hashlib.sha1(digest_source.encode("utf-8")).hexdigest()[:10]
+    return f"wbm_{slug}_{digest}"
+
+
 async def send_notifications(listings: List[Listing]) -> None:
     fresh = [l for l in listings if l["id"] not in notified]
     if not fresh:
@@ -325,6 +340,7 @@ async def send_notifications(listings: List[Listing]) -> None:
     for l in fresh:          # ← sequential loop
         snippet = l.get("title") or l.get("address") or l["link"].split("/")[-1]
         snippet = snippet[:50]
+        log.debug("Sending listing %s (%s)", l["id"], l["link"])
         await bot.send_message(
             chat_id=TG_CHAT,
             text=(
@@ -373,4 +389,3 @@ log.info("Cron %s registered – entering loop", CRON_SCHEDULE)
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_forever()
-

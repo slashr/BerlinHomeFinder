@@ -220,9 +220,10 @@ def test_scan_wbm(monkeypatch):
 
     monkeypatch.setattr(scan, "fetch", fake_fetch)
     listings = asyncio.run(scan.scan_wbm())
+    expected_id = scan.build_wbm_listing_id("https://www.wbm.de/d1", 3.0, 70.0)
     assert listings == [
         {
-            "id": "wbm_u1",
+            "id": expected_id,
             "rooms": 3.0,
             "sqm": 70.0,
             "link": "https://www.wbm.de/d1",
@@ -292,3 +293,10 @@ def test_scan_stubs():
     assert asyncio.run(scan.scan_degewo()) == []
     assert asyncio.run(scan.scan_howoge()) == []
     assert asyncio.run(scan.scan_stadtundland()) == []
+
+
+def test_build_wbm_listing_id_stable():
+    link = "https://www.wbm.de/wohnungen-berlin/angebote/details/foo-bar/"
+    first = scan.build_wbm_listing_id(link, 3.0, 70.0)
+    second = scan.build_wbm_listing_id(link, 3.00, 70.00)
+    assert first == second
