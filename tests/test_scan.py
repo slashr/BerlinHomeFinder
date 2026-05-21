@@ -338,3 +338,60 @@ def test_build_message_without_location_or_rent():
     assert "📍" not in message
     assert "💶" not in message
     assert "Listing</a>" in message
+
+
+def test_send_notifications_persists_successes_after_partial_failure(monkeypatch):
+    sent_links = []
+    saved_states = []
+
+    class FakeBot:
+        async def send_message(self, *, chat_id, text, parse_mode, disable_web_page_preview):
+            if "example.com/b" in text:
+                raise RuntimeError("telegram unavailable")
+            sent_links.append(text)
+
+    listings = [
+        {
+            "id": "a",
+            "rooms": 3.0,
+            "sqm": 70.0,
+            "link": "https://example.com/a",
+            "rent": None,
+            "title": "A",
+            "address": None,
+            "provider": "DemoProvider",
+        },
+        {
+            "id": "b",
+            "rooms": 3.0,
+            "sqm": 71.0,
+            "link": "https://example.com/b",
+            "rent": None,
+            "title": "B",
+            "address": None,
+            "provider": "DemoProvider",
+        },
+        {
+            "id": "c",
+            "rooms": 3.0,
+            "sqm": 72.0,
+            "link": "https://example.com/c",
+            "rent": None,
+            "title": "C",
+            "address": None,
+            "provider": "DemoProvider",
+        },
+    ]
+
+    def fake_save_state(state):
+        saved_states.append(set(state))
+
+    monkeypatch.setattr(scan, "bot", FakeBot())
+    monkeypatch.setattr(scan, "notified", set())
+    monkeypatch.setattr(scan, "save_state", fake_save_state)
+
+    asyncio.run(scan.send_notifications(listings))
+
+    assert len(sent_links) == 2
+    assert scan.notified == {"a", "c"}
+    assert saved_states == [{"a"}, {"a", "c"}]
