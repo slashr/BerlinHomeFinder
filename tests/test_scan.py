@@ -1,6 +1,7 @@
 import os
 import sys
 import asyncio
+import json
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -238,12 +239,50 @@ def test_scan_wbm(monkeypatch):
     ]
 
 
+def test_scan_wbm_filters_non_preferred_location(monkeypatch):
+    html = """
+    <div class='row openimmo-search-list-item' data-uid='u2'>
+        <div class='area'>Spandau</div>
+        <div class='address'>Streitstraße 5, 13587 Berlin</div>
+        <h2 class='imageTitle'>Wohnung in Hakenfelde</h2>
+        <div class='main-property-rooms'>3,0</div>
+        <div class='main-property-size'>70 m²</div>
+        <a title='Details' href='/d2'>Details</a>
+    </div>
+    """
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+    assert asyncio.run(scan.scan_wbm()) == []
+
+
+def test_scan_wbm_location_fallback(monkeypatch):
+    html = """
+    <div class='row openimmo-search-list-item' data-uid='u3'>
+        Wedding 13347 Berlin
+        <div class='main-property-rooms'>3,0</div>
+        <div class='main-property-size'>70 m²</div>
+        <a title='Details' href='/d3'>Details</a>
+    </div>
+    """
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+    listings = asyncio.run(scan.scan_wbm())
+    assert listings and listings[0]["link"] == "https://www.wbm.de/d3"
+
+
 def test_scan_inberlinwohnen(monkeypatch):
     html = """
     <ul id='_tb_relevant_results'>
         <li id='b1' class='tb-merkflat'>
             <a title='detailierte Ansicht' href='/b1detail'>Link</a>
             <h3>Feine Wohnung in Wedding</h3>
+            <address>Gerichtstraße 13, 13347 Berlin</address>
             <strong>3</strong>
             <strong>70</strong>
             <strong>ab 1200 €</strong>
@@ -264,10 +303,98 @@ def test_scan_inberlinwohnen(monkeypatch):
             "link": "https://inberlinwohnen.de/b1detail",
             "rent": "1200",
             "title": "Feine Wohnung in Wedding",
-            "address": None,
+            "address": "Gerichtstraße 13, 13347 Berlin",
             "provider": "inBerlinWohnen",
         }
     ]
+
+
+def test_scan_inberlinwohnen_livewire(monkeypatch):
+    snapshot = json.dumps(
+        {
+            "data": {
+                "item": [
+                    {
+                        "id": "live-1",
+                        "title": "Große Wohnung am Nordufer",
+                        "deeplink": "https://inberlinwohnen.example/listing/live-1",
+                        "rooms": "3",
+                        "area": "72,5",
+                        "rentGross": "1.200,00",
+                        "address": [
+                            {
+                                "street": "Nordufer",
+                                "number": "12",
+                                "zipCode": "13353",
+                                "district": "Wedding",
+                                "lat": "52.5443",
+                                "lon": "13.3569",
+                            },
+                            {"s": "arr"},
+                        ],
+                    },
+                    {"s": "arr"},
+                ]
+            }
+        }
+    )
+    html = f"<div wire:snapshot='{snapshot}'></div>"
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+    listings = asyncio.run(scan.scan_inberlinwohnen())
+    assert listings == [
+        {
+            "id": "inberlinwohnen_live-1",
+            "rooms": 3.0,
+            "sqm": 72.5,
+            "link": "https://inberlinwohnen.example/listing/live-1",
+            "rent": "1.200",
+            "title": "Große Wohnung am Nordufer",
+            "address": "Nordufer 12, 13353, Wedding",
+            "provider": "inBerlinWohnen",
+        }
+    ]
+
+
+def test_scan_inberlinwohnen_filters_non_preferred_livewire(monkeypatch):
+    snapshot = json.dumps(
+        {
+            "data": {
+                "item": [
+                    {
+                        "id": "live-2",
+                        "title": "Wohnung in Buckow",
+                        "deeplink": "https://inberlinwohnen.example/listing/live-2",
+                        "rooms": "3",
+                        "area": "72",
+                        "rentGross": "1.200,00",
+                        "address": [
+                            {
+                                "street": "In den Bauerngärten",
+                                "number": "10",
+                                "zipCode": "12349",
+                                "district": "Neukölln",
+                                "lat": "52.41437138",
+                                "lon": "13.43496921",
+                            },
+                            {"s": "arr"},
+                        ],
+                    },
+                    {"s": "arr"},
+                ]
+            }
+        }
+    )
+    html = f"<div wire:snapshot='{snapshot}'></div>"
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+    assert asyncio.run(scan.scan_inberlinwohnen()) == []
 
 
 def test_scan_inberlinwohnen_skip_wbm(monkeypatch):
@@ -275,7 +402,7 @@ def test_scan_inberlinwohnen_skip_wbm(monkeypatch):
     <ul id='_tb_relevant_results'>
         <li id='b2' class='tb-merkflat'>
             <a title='detailierte Ansicht' href='https://www.wbm.de/foo'>Link</a>
-            <h3>WBM</h3>
+            <h3>WBM listing in Wedding</h3>
             <strong>3</strong>
             <strong>70</strong>
             <strong>ab 1200 €</strong>
