@@ -16,7 +16,7 @@ def test_scan_gewobag(monkeypatch):
     html = """
     <article id='a1' class='angebot-big-box'>
         <h3 class='angebot-title'>Top Wohnung</h3>
-        <address>Berlin</address>
+        <address>Wedding, Berlin</address>
         <table><tr class='angebot-area'><td>3 Zimmer | 65,0 m²</td></tr></table>
         <a class='read-more-link' href='/flat1'>Mehr</a>
     </article>
@@ -59,7 +59,7 @@ def test_scan_gewobag(monkeypatch):
             "link": "https://www.gewobag.de/flat1",
             "rent": None,
             "title": "Top Wohnung",
-            "address": "Berlin",
+            "address": "Wedding, Berlin",
             "provider": "Gewobag",
         }
     ]
@@ -69,7 +69,7 @@ def test_scan_gewobag_relative(monkeypatch):
     html = """
     <article id='b1' class='angebot-big-box'>
         <h3 class='angebot-title'>Noch eine</h3>
-        <address>Berlin</address>
+        <address>Pankow, Berlin</address>
         <table><tr class='angebot-area'><td>3 Zimmer | 66 m²</td></tr></table>
         <a class='read-more-link' href='../flat2'>Mehr</a>
     </article>
@@ -111,7 +111,7 @@ def test_scan_gewobag_retry_success(monkeypatch):
     html = """
     <article id='c1' class='angebot-big-box'>
         <h3 class='angebot-title'>Retry ok</h3>
-        <address>Berlin</address>
+        <address>Mitte, Berlin</address>
         <table><tr class='angebot-area'><td>3 Zimmer | 65 m²</td></tr></table>
         <a class='read-more-link' href='/flat3'>Mehr</a>
     </article>
@@ -209,6 +209,9 @@ def test_scan_gewobag_retry_fail(monkeypatch):
 def test_scan_wbm(monkeypatch):
     html = """
     <div class='row openimmo-search-list-item' data-uid='u1'>
+        <div class='area'>Pankow</div>
+        <div class='address'>Berliner Straße 1, 13189 Berlin</div>
+        <h2 class='imageTitle'>Wohnung in Pankow</h2>
         <div class='main-property-rooms'>3,0</div>
         <div class='main-property-size'>70 m²</div>
         <a title='Details' href='/d1'>Details</a>
@@ -228,8 +231,8 @@ def test_scan_wbm(monkeypatch):
             "sqm": 70.0,
             "link": "https://www.wbm.de/d1",
             "rent": None,
-            "title": None,
-            "address": None,
+            "title": "Wohnung in Pankow",
+            "address": "Berliner Straße 1, 13189 Berlin",
             "provider": "WBM",
         }
     ]
@@ -240,7 +243,7 @@ def test_scan_inberlinwohnen(monkeypatch):
     <ul id='_tb_relevant_results'>
         <li id='b1' class='tb-merkflat'>
             <a title='detailierte Ansicht' href='/b1detail'>Link</a>
-            <h3>Feine Wohnung</h3>
+            <h3>Feine Wohnung in Wedding</h3>
             <strong>3</strong>
             <strong>70</strong>
             <strong>ab 1200 €</strong>
@@ -260,7 +263,7 @@ def test_scan_inberlinwohnen(monkeypatch):
             "sqm": 70.0,
             "link": "https://inberlinwohnen.de/b1detail",
             "rent": "1200",
-            "title": "Feine Wohnung",
+            "title": "Feine Wohnung in Wedding",
             "address": None,
             "provider": "inBerlinWohnen",
         }
@@ -293,7 +296,7 @@ def test_scan_inberlinwohnen_keeps_legacy_room_filter(monkeypatch):
     <ul id='_tb_relevant_results'>
         <li id='b3' class='tb-merkflat'>
             <a title='detailierte Ansicht' href='/b3detail'>Link</a>
-            <h3>Compact three-room flat</h3>
+            <h3>Compact three-room flat in Wedding</h3>
             <strong>3</strong>
             <strong>55</strong>
             <strong>ab 1200 €</strong>
@@ -320,6 +323,13 @@ def test_parse_number_handles_german_formats():
     assert scan._passes_rent_filter("1.600,00 €")
     assert not scan._passes_rent_filter("1.600,01 €")
     assert scan._rent_text("1.179,98 €") == "1.179,98"
+
+
+def test_location_matches_preferred_text_zip_and_nearby_coords():
+    assert scan._location_matches(["Wedding"])
+    assert scan._location_matches(["Gerichtstraße 13, 13347 Berlin"])
+    assert scan._location_matches([], (52.543, 13.367))
+    assert not scan._location_matches(["Hakenfelde"], (52.5575599, 13.209115))
 
 
 def test_scan_gesobau(monkeypatch):
@@ -421,7 +431,7 @@ def test_scan_degewo(monkeypatch):
     <div class='c-teaser c-teaser--apartment'>
         <button data-openimmo-bookmark-item-uid='W-large'></button>
         <h3><a href='/immosuche/details/large'>Große Wohnung</a></h3>
-        <p>Adresse 2 | Kiez</p>
+        <p>Adresse 2 | Pankow</p>
         <div class='c-definition-list__item'><dt>1.250,50 €</dt><dd>Warmmiete</dd></div>
         <div class='c-definition-list__item'><dt>3</dt><dd>Zimmer</dd></div>
         <div class='c-definition-list__item'><dt>72,5</dt><dd>m²</dd></div>
@@ -445,7 +455,7 @@ def test_scan_degewo(monkeypatch):
             "link": "https://www.degewo.de/immosuche/details/large",
             "rent": "1.250,50",
             "title": "Große Wohnung",
-            "address": "Adresse 2 | Kiez",
+            "address": "Adresse 2 | Pankow",
             "provider": "degewo",
         }
     ]
@@ -457,7 +467,7 @@ def test_scan_howoge(monkeypatch):
             {
                 "uid": 7094,
                 "title": "Streitstraße 5, 13587 Berlin",
-                "district": "Hakenfelde",
+                "district": "Pankow",
                 "rent": 803,
                 "area": 73,
                 "rooms": 3,

@@ -24,10 +24,12 @@ import asyncio
 import hashlib
 import html
 import logging
+import math
 import os
 import pickle
 import re
 import signal
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Dict, List, TypedDict
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -74,6 +76,35 @@ GESOBAU_URL = (
 HOWOGE_URL = "https://www.howoge.de/?type=999&tx_howrealestate_json_list%5Baction%5D=immoList"
 DEGEWO_URL = "https://www.degewo.de/immosuche"
 INBERLIN_DUPLICATE_DOMAINS = ("wbm.de", "degewo.de", "gesobau.de", "howoge.de")
+LOCATION_DISTANCE_KM = 2.0
+PREFERRED_LOCATION_TERMS = {
+    "wedding",
+    "mitte",
+    "pankow",
+    "prenzlauer berg",
+    "gesundbrunnen",
+    "moabit",
+    "weissensee",
+    "niederschonhausen",
+    "heinersdorf",
+    "wilhelmsruh",
+    "franzosisch buchholz",
+}
+PREFERRED_ZIPS = {
+    "10115", "10117", "10119", "10178", "10179",
+    "10405", "10407", "10409", "10435", "10437", "10439",
+    "10551", "10553", "10555", "10557", "10559",
+    "13086", "13088", "13089",
+    "13125", "13127", "13129", "13156", "13158", "13159", "13187", "13189",
+    "13347", "13349", "13351", "13353", "13355", "13357", "13359",
+}
+LOCATION_REFERENCE_POINTS = (
+    (52.5426, 13.3662),  # Wedding station
+    (52.5486, 13.3889),  # Gesundbrunnen / Humboldthain edge
+    (52.5200, 13.4050),  # Mitte / Alexanderplatz
+    (52.5385, 13.4244),  # Prenzlauer Berg
+    (52.5667, 13.4127),  # Pankow
+)
 
 # ───────────────────────────  LOGGING  ──────────────────────────── #
 
@@ -248,6 +279,57 @@ def _text_or_none(node: Any) -> str | None:
     text = node.get_text(" ", strip=True)
     return text or None
 
+
+def _normalize_location_text(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", html.unescape(str(value or "")))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return text.casefold()
+
+
+def _contains_location_term(text: str, term: str) -> bool:
+    return re.search(rf"(?<![a-z]){re.escape(term)}(?![a-z])", text) is not None
+
+
+def _extract_zip(text: str) -> str | None:
+    match = re.search(r"\b1\d{4}\b", text)
+    return match.group(0) if match else None
+
+
+def _parse_coords(lat: Any, lng: Any) -> tuple[float, float] | None:
+    parsed_lat = _parse_number(lat)
+    parsed_lng = _parse_number(lng)
+    if parsed_lat is None or parsed_lng is None:
+        return None
+    return parsed_lat, parsed_lng
+
+
+def _distance_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    lat1, lng1 = math.radians(a[0]), math.radians(a[1])
+    lat2, lng2 = math.radians(b[0]), math.radians(b[1])
+    d_lat = lat2 - lat1
+    d_lng = lng2 - lng1
+    h = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(d_lng / 2) ** 2
+    )
+    return 6371.0 * 2 * math.asin(math.sqrt(h))
+
+
+def _location_matches(
+    texts: List[Any],
+    coords: tuple[float, float] | None = None,
+) -> bool:
+    location_text = " ".join(_normalize_location_text(text) for text in texts if text)
+    if location_text:
+        if any(_contains_location_term(location_text, term) for term in PREFERRED_LOCATION_TERMS):
+            return True
+        zip_code = _extract_zip(location_text)
+        if zip_code in PREFERRED_ZIPS:
+            return True
+    if coords is not None:
+        return min(_distance_km(coords, point) for point in LOCATION_REFERENCE_POINTS) <= LOCATION_DISTANCE_KM
+    return False
+
 # ──────────────────────────  SCANNERS  ───────────────────────────── #
 
 async def scan_gewobag() -> List[Listing]:
@@ -294,6 +376,12 @@ async def scan_gewobag() -> List[Listing]:
                     sqm = float(sqm_txt.replace("m²", "").replace(",", "."))
                     if not _passes_size_filter(rooms, sqm):
                         continue
+                    location_texts = [
+                        art.select_one("address").get_text(" ", strip=True),
+                        art.select_one("h3.angebot-title").get_text(" ", strip=True),
+                    ]
+                    if not _location_matches(location_texts):
+                        continue
                     link = art.select_one("a.read-more-link")["href"]
                     if not link.startswith("http"):
                         link = urljoin("https://www.gewobag.de", link)
@@ -325,6 +413,11 @@ async def scan_wbm() -> List[Listing]:
     listings: List[Listing] = []
     for div in soup.select("div.row.openimmo-search-list-item"):
         try:
+            area = _text_or_none(div.select_one(".area"))
+            address = _text_or_none(div.select_one(".address"))
+            title = _text_or_none(div.select_one("h2.imageTitle"))
+            if not _location_matches([area, address, title]):
+                continue
             rooms = float(div.select_one("div.main-property-rooms").text.strip().replace(",", "."))
             sqm = float(div.select_one("div.main-property-size").text
                         .replace("m²", "").replace(",", ".").strip())
@@ -341,8 +434,8 @@ async def scan_wbm() -> List[Listing]:
                     sqm=sqm,
                     link=link,
                     rent=None,
-                    title=None,
-                    address=None,
+                    title=title,
+                    address=address,
                     provider="WBM",
                 )
             )
@@ -373,6 +466,9 @@ async def scan_inberlinwohnen() -> List[Listing]:
                              .replace(".", "").replace(",", "."))
             if rooms < 3 or rent_val > MAX_RENT:
                 continue
+            title = li.find("h3").get_text(strip=True)
+            if not _location_matches([title]):
+                continue
             link = li.find("a", title=lambda t: t and "detailierte" in t)["href"]
             if not link.startswith("http"):
                 link = "https://inberlinwohnen.de" + link
@@ -385,7 +481,7 @@ async def scan_inberlinwohnen() -> List[Listing]:
                     sqm=sqm,
                     link=link,
                     rent=f"{rent_val:.0f}",
-                    title=li.find("h3").get_text(strip=True),
+                    title=title,
                     address=None,
                     provider="inBerlinWohnen",
                 )
@@ -405,6 +501,16 @@ async def scan_gesobau() -> List[Listing]:
     for item in data:
         try:
             raw = item.get("raw") or {}
+            location_texts = [
+                item.get("title"),
+                raw.get("adresse_stringS"),
+                raw.get("plz_stringS"),
+                raw.get("ort_stringS"),
+                " ".join(raw.get("region_stringM") or []),
+                " ".join(raw.get("location_stringM") or []),
+            ]
+            if not _location_matches(location_texts, _parse_coords(item.get("lat"), item.get("lng"))):
+                continue
             rooms = _parse_number(raw.get("zimmer_intS"))
             sqm = _parse_number(raw.get("wohnflaeche_floatS"))
             if not _passes_rent_filter(raw.get("warmmiete_floatS")):
@@ -511,6 +617,10 @@ def _parse_degewo_page(soup: BeautifulSoup) -> List[Listing]:
             link_node = card.select_one("h3 a[href]")
             if not link_node:
                 continue
+            title = _text_or_none(link_node)
+            address = _text_or_none(card.select_one("h3 + p"))
+            if not _location_matches([title, address]):
+                continue
             link = urljoin("https://www.degewo.de", link_node["href"])
             bookmark = card.select_one("[data-openimmo-bookmark-item-uid]")
             lid = (
@@ -525,8 +635,8 @@ def _parse_degewo_page(soup: BeautifulSoup) -> List[Listing]:
                     sqm=sqm,
                     link=link,
                     rent=_rent_text(facts.get("Warmmiete")),
-                    title=_text_or_none(link_node),
-                    address=_text_or_none(card.select_one("h3 + p")),
+                    title=title,
+                    address=address,
                     provider="degewo",
                 )
             )
@@ -570,6 +680,14 @@ async def scan_howoge() -> List[Listing]:
     listings: List[Listing] = []
     for item in data.get("immoobjects", []):
         try:
+            coords = item.get("coordinates") or {}
+            location_texts = [
+                item.get("title"),
+                item.get("district"),
+                item.get("notice"),
+            ]
+            if not _location_matches(location_texts, _parse_coords(coords.get("lat"), coords.get("lng"))):
+                continue
             rooms = _parse_number(item.get("rooms"))
             sqm = _parse_number(item.get("area"))
             if not _passes_size_filter(rooms, sqm):
