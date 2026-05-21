@@ -26,9 +26,11 @@ import html
 import logging
 import os
 import pickle
+import re
 import signal
 from datetime import datetime, timezone
 from typing import Any, Dict, List, TypedDict
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import aiohttp
 import aiocron
@@ -43,7 +45,7 @@ from telegram.constants import ParseMode
 CRON_SCHEDULE = "*/2 * * * *"    # every two minutes
 MIN_ROOMS = 2.5
 MIN_SQM = 62
-MAX_RENT_INBERLIN = 1600         # €
+MAX_RENT = 1600                  # €
 
 STATE_FILE = os.getenv("STATE_FILE", "./notified.pkl")
 
@@ -58,6 +60,20 @@ HEADERS = {
 }
 
 GEWOBAG_TIMEOUT = 15_000  # ms
+DEGEWO_MAX_PAGES = 10
+
+GESOBAU_URL = (
+    "https://www.gesobau.de/mieten/wohnungssuche/"
+    "?resultsPerPage=10000"
+    "&resultsPage=0"
+    "&resultAsJSON=1"
+    "&befilter%5B0%5D=nutzungsart_stringS%3AWOHNEN"
+    "&befilter%5B1%5D=kanal_stringM%3A%28%22Service%22+OR+%22Senioren+Kachel%22+"
+    "OR+%22Bestand%22+OR+%22Studierende%22+OR+%22Neubau+Kachel%22%29"
+)
+HOWOGE_URL = "https://www.howoge.de/?type=999&tx_howrealestate_json_list%5Baction%5D=immoList"
+DEGEWO_URL = "https://www.degewo.de/immosuche"
+INBERLIN_DUPLICATE_DOMAINS = ("wbm.de", "degewo.de", "gesobau.de", "howoge.de")
 
 # ───────────────────────────  LOGGING  ──────────────────────────── #
 
@@ -144,6 +160,31 @@ async def fetch(url: str, *, params: Dict[str, Any] | None = None, timeout: int 
         log.warning("Fetch error %s → %s", url, exc)
         return ""
 
+
+async def fetch_json(
+    url: str,
+    *,
+    data: Dict[str, Any] | None = None,
+    params: Dict[str, Any] | None = None,
+    timeout: int = 12,
+) -> Any | None:
+    session = await ensure_session()
+    headers = {**HEADERS, "X-Requested-With": "XMLHttpRequest"}
+    try:
+        if data is None:
+            async with session.get(
+                url, params=params, headers=headers, timeout=timeout
+            ) as r:
+                r.raise_for_status()
+                return await r.json(content_type=None)
+        async with session.post(url, data=data, headers=headers, timeout=timeout) as r:
+            r.raise_for_status()
+            return await r.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        log.warning("Fetch JSON error %s → %s", url, exc)
+        return None
+
+
 class Listing(TypedDict):
     id: str
     rooms: float
@@ -153,6 +194,51 @@ class Listing(TypedDict):
     title: str | None
     address: str | None
     provider: str
+
+
+def _parse_number(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if value is None:
+        return None
+
+    text = html.unescape(str(value)).replace("\xa0", " ").replace("\u202f", " ")
+    match = re.search(r"\d+(?:[.,]\d{3})*(?:[.,]\d+)?|\d+", text)
+    if not match:
+        return None
+
+    number = match.group(0)
+    if "," in number and "." in number:
+        number = number.replace(".", "").replace(",", ".")
+    elif "," in number:
+        number = number.replace(",", ".")
+    try:
+        return float(number)
+    except ValueError:
+        return None
+
+
+def _passes_size_filter(rooms: float | None, sqm: float | None) -> bool:
+    return rooms is not None and sqm is not None and rooms >= MIN_ROOMS and sqm >= MIN_SQM
+
+
+def _passes_rent_filter(value: Any) -> bool:
+    rent = _parse_number(value)
+    return rent is None or rent <= MAX_RENT
+
+
+def _rent_text(value: Any) -> str | None:
+    rent = _parse_number(value)
+    if rent is None:
+        return None
+    return f"{rent:.2f}".rstrip("0").rstrip(".")
+
+
+def _text_or_none(node: Any) -> str | None:
+    if not node:
+        return None
+    text = node.get_text(" ", strip=True)
+    return text or None
 
 # ──────────────────────────  SCANNERS  ───────────────────────────── #
 
@@ -198,11 +284,10 @@ async def scan_gewobag() -> List[Listing]:
                     rooms_txt, sqm_txt = [s.strip() for s in area.split("|")]
                     rooms = float(rooms_txt.split()[0].replace(",", "."))
                     sqm = float(sqm_txt.replace("m²", "").replace(",", "."))
-                    if rooms < MIN_ROOMS or sqm < MIN_SQM:
+                    if not _passes_size_filter(rooms, sqm):
                         continue
                     link = art.select_one("a.read-more-link")["href"]
                     if not link.startswith("http"):
-                        from urllib.parse import urljoin
                         link = urljoin("https://www.gewobag.de", link)
                     listings.append(
                         Listing(
@@ -223,6 +308,7 @@ async def scan_gewobag() -> List[Listing]:
     log.info("[Gewobag] %d listings", len(listings))
     return listings
 
+
 async def scan_wbm() -> List[Listing]:
     html = await fetch("https://www.wbm.de/wohnungen-berlin/angebote/")
     if not html:
@@ -234,7 +320,7 @@ async def scan_wbm() -> List[Listing]:
             rooms = float(div.select_one("div.main-property-rooms").text.strip().replace(",", "."))
             sqm = float(div.select_one("div.main-property-size").text
                         .replace("m²", "").replace(",", ".").strip())
-            if rooms < MIN_ROOMS or sqm < MIN_SQM:
+            if not _passes_size_filter(rooms, sqm):
                 continue
             link = div.find("a", title="Details")["href"]
             if not link.startswith("http"):
@@ -257,6 +343,7 @@ async def scan_wbm() -> List[Listing]:
     log.info("[WBM] %d listings", len(listings))
     return listings
 
+
 async def scan_inberlinwohnen() -> List[Listing]:
     html = await fetch("https://inberlinwohnen.de/wohnungsfinder/")
     if not html:
@@ -276,13 +363,13 @@ async def scan_inberlinwohnen() -> List[Listing]:
             sqm = float(st[1].text.replace(",", "."))
             rent_val = float(st[2].text.replace("€", "").replace("ab", "")
                              .replace(".", "").replace(",", "."))
-            if rooms < 3 or rent_val > MAX_RENT_INBERLIN:
+            if not _passes_size_filter(rooms, sqm) or rent_val > MAX_RENT:
                 continue
             link = li.find("a", title=lambda t: t and "detailierte" in t)["href"]
             if not link.startswith("http"):
                 link = "https://inberlinwohnen.de" + link
-            if "wbm.de" in link:
-                continue  # skip WBM entries to avoid duplicates
+            if any(domain in link for domain in INBERLIN_DUPLICATE_DOMAINS):
+                continue  # skip entries covered by direct provider scanners
             listings.append(
                 Listing(
                     id=f"inberlinwohnen_{lid}",
@@ -300,19 +387,214 @@ async def scan_inberlinwohnen() -> List[Listing]:
     log.info("[inberlinwohnen] %d listings", len(listings))
     return listings
 
-# stubs – add real scrapers later
-async def scan_gesobau() -> List[Listing]:     return []
-async def scan_degewo() -> List[Listing]:      return []
-async def scan_howoge() -> List[Listing]:      return []
-async def scan_stadtundland() -> List[Listing]:return []
+
+async def scan_gesobau() -> List[Listing]:
+    data = await fetch_json(GESOBAU_URL)
+    if not isinstance(data, list):
+        return []
+
+    listings: List[Listing] = []
+    for item in data:
+        try:
+            raw = item.get("raw") or {}
+            rooms = _parse_number(raw.get("zimmer_intS"))
+            sqm = _parse_number(raw.get("wohnflaeche_floatS"))
+
+            detail = raw.get("url") or item.get("detail") or ""
+            link = urljoin("https://www.gesobau.de", detail)
+            if rooms is None and link:
+                rooms = await _fetch_gesobau_detail_rooms(link)
+            if not _passes_size_filter(rooms, sqm):
+                continue
+            if not _passes_rent_filter(raw.get("warmmiete_floatS")):
+                continue
+
+            address_parts = [
+                raw.get("adresse_stringS") or item.get("title"),
+                raw.get("plz_stringS"),
+                raw.get("ort_stringS"),
+            ]
+            address = ", ".join(str(part) for part in address_parts if part)
+            title = raw.get("title") or item.get("title")
+            lid = raw.get("objekt_nr_extern_stringS") or item.get("uid")
+            listings.append(
+                Listing(
+                    id=f"gesobau_{lid}",
+                    rooms=rooms,
+                    sqm=sqm,
+                    link=link,
+                    rent=_rent_text(raw.get("warmmiete_floatS")),
+                    title=title,
+                    address=address or None,
+                    provider="GESOBAU",
+                )
+            )
+        except Exception:
+            log.debug("GESOBAU parse error", exc_info=True)
+    log.info("[GESOBAU] %d listings", len(listings))
+    return listings
+
+
+async def _fetch_gesobau_detail_rooms(link: str) -> float | None:
+    html_text = await fetch(link)
+    if not html_text:
+        return None
+    soup = BeautifulSoup(html_text, "lxml")
+    match = re.search(
+        r"(\d+(?:[,.]\d+)?)\s*Zimmer",
+        soup.get_text(" ", strip=True),
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return _parse_number(match.group(1))
+
+
+async def scan_degewo() -> List[Listing]:
+    listings: List[Listing] = []
+    seen_ids: set[str] = set()
+    next_url: str | None = DEGEWO_URL
+    seen_urls: set[str] = set()
+
+    for _ in range(DEGEWO_MAX_PAGES):
+        if not next_url or next_url in seen_urls:
+            break
+        seen_urls.add(next_url)
+        html_text = await fetch(next_url)
+        if not html_text:
+            break
+
+        soup = BeautifulSoup(html_text, "lxml")
+        for listing in _parse_degewo_page(soup):
+            if listing["id"] in seen_ids:
+                continue
+            seen_ids.add(listing["id"])
+            listings.append(listing)
+
+        current_page = _degewo_page_number(next_url)
+        next_url = _next_degewo_page_url(soup, current_page)
+
+    log.info("[degewo] %d listings", len(listings))
+    return listings
+
+
+def _parse_degewo_page(soup: BeautifulSoup) -> List[Listing]:
+    listings: List[Listing] = []
+    for card in soup.select("div.c-teaser.c-teaser--apartment"):
+        try:
+            facts: Dict[str, str] = {}
+            for item in card.select(".c-definition-list__item"):
+                value = _text_or_none(item.select_one("dt"))
+                label = _text_or_none(item.select_one("dd"))
+                if value and label:
+                    facts[label] = value
+
+            rooms = _parse_number(facts.get("Zimmer"))
+            sqm = _parse_number(facts.get("m²"))
+            if not _passes_size_filter(rooms, sqm):
+                continue
+            if not _passes_rent_filter(facts.get("Warmmiete")):
+                continue
+
+            link_node = card.select_one("h3 a[href]")
+            if not link_node:
+                continue
+            link = urljoin("https://www.degewo.de", link_node["href"])
+            bookmark = card.select_one("[data-openimmo-bookmark-item-uid]")
+            lid = (
+                bookmark.get("data-openimmo-bookmark-item-uid")
+                if bookmark
+                else link.rstrip("/").split("/")[-1]
+            )
+            listings.append(
+                Listing(
+                    id=f"degewo_{lid}",
+                    rooms=rooms,
+                    sqm=sqm,
+                    link=link,
+                    rent=facts.get("Warmmiete"),
+                    title=_text_or_none(link_node),
+                    address=_text_or_none(card.select_one("h3 + p")),
+                    provider="degewo",
+                )
+            )
+        except Exception:
+            log.debug("degewo parse error", exc_info=True)
+    return listings
+
+
+def _degewo_page_number(url: str) -> int:
+    query = parse_qs(urlparse(url).query)
+    value = query.get("tx_openimmo_immobilie[page]")
+    if not value:
+        return 1
+    try:
+        return int(value[0])
+    except ValueError:
+        return 1
+
+
+def _next_degewo_page_url(soup: BeautifulSoup, current_page: int) -> str | None:
+    target = current_page + 1
+    for link in soup.select("a[href]"):
+        url = urljoin("https://www.degewo.de", link["href"])
+        if _degewo_page_number(url) == target:
+            return url
+    return None
+
+
+async def scan_howoge() -> List[Listing]:
+    data = await fetch_json(
+        HOWOGE_URL,
+        data={
+            "tx_howrealestate_json_list[page]": 1,
+            "tx_howrealestate_json_list[limit]": 500,
+            "tx_howrealestate_json_list[lang]": "",
+        },
+    )
+    if not isinstance(data, dict):
+        return []
+
+    listings: List[Listing] = []
+    for item in data.get("immoobjects", []):
+        try:
+            rooms = _parse_number(item.get("rooms"))
+            sqm = _parse_number(item.get("area"))
+            if not _passes_size_filter(rooms, sqm):
+                continue
+            if not _passes_rent_filter(item.get("rent")):
+                continue
+
+            link = urljoin("https://www.howoge.de", item.get("link") or "")
+            title = str(item.get("notice") or "").strip() or None
+            listings.append(
+                Listing(
+                    id=f"howoge_{item['uid']}",
+                    rooms=rooms,
+                    sqm=sqm,
+                    link=link,
+                    rent=_rent_text(item.get("rent")),
+                    title=title or item.get("title"),
+                    address=item.get("title") or item.get("district"),
+                    provider="HOWOGE",
+                )
+            )
+        except Exception:
+            log.debug("HOWOGE parse error", exc_info=True)
+    log.info("[HOWOGE] %d listings", len(listings))
+    return listings
+
+
+async def scan_stadtundland() -> List[Listing]:
+    return []
 
 SCANNERS = [
     scan_gewobag,
     scan_wbm,
     scan_inberlinwohnen,
-    # scan_gesobau,
-    # scan_degewo,
-    # scan_howoge,
+    scan_gesobau,
+    scan_degewo,
+    scan_howoge,
     # scan_stadtundland,
 ]
 
@@ -413,14 +695,7 @@ async def job() -> None:
         log.warning("Previous run still active — skipping")
         return
     async with JOB_LOCK:
-        # decide dynamically which scanners to call
-        scanners = [
-            scan_gewobag,
-            scan_wbm,
-            scan_inberlinwohnen
-        ]
-
-        tasks = [asyncio.create_task(scan()) for scan in scanners]
+        tasks = [asyncio.create_task(scan()) for scan in SCANNERS]
         flat: List[Listing] = []
         for coro in asyncio.as_completed(tasks):
             listings = await coro
