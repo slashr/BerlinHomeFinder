@@ -288,16 +288,42 @@ def test_scan_inberlinwohnen_skip_wbm(monkeypatch):
     assert listings == []
 
 
+def test_scan_inberlinwohnen_keeps_legacy_room_filter(monkeypatch):
+    html = """
+    <ul id='_tb_relevant_results'>
+        <li id='b3' class='tb-merkflat'>
+            <a title='detailierte Ansicht' href='/b3detail'>Link</a>
+            <h3>Compact three-room flat</h3>
+            <strong>3</strong>
+            <strong>55</strong>
+            <strong>ab 1200 €</strong>
+        </li>
+    </ul>
+    """
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+    listings = asyncio.run(scan.scan_inberlinwohnen())
+
+    assert listings and listings[0]["id"] == "inberlinwohnen_b3"
+
+
 def test_parse_number_handles_german_formats():
     assert scan._parse_number("1.179,98 €") == 1179.98
+    assert scan._parse_number("1.234 €") == 1234.0
+    assert scan._parse_number("1.234.567 €") == 1234567.0
     assert scan._parse_number("2,5 Zimmer") == 2.5
     assert scan._parse_number("70.5 m²") == 70.5
     assert scan._parse_number(None) is None
     assert scan._passes_rent_filter("1.600,00 €")
     assert not scan._passes_rent_filter("1.600,01 €")
+    assert scan._rent_text("1.179,98 €") == "1.179,98"
 
 
 def test_scan_gesobau(monkeypatch):
+    detail_fetches = []
     payload = [
         {
             "uid": 1,
@@ -324,12 +350,23 @@ def test_scan_gesobau(monkeypatch):
                 "wohnflaeche_floatS": 80,
             },
         },
+        {
+            "uid": 3,
+            "detail": "/detail/missing-size",
+            "title": "No size",
+            "raw": {
+                "objekt_nr_extern_stringS": "obj-3",
+                "url": "/detail/missing-size",
+                "warmmiete_floatS": 900,
+            },
+        },
     ]
 
     async def fake_fetch_json(url, *, data=None, params=None, timeout=12):
         return payload
 
     async def fake_fetch(url, *, params=None, timeout=12):
+        detail_fetches.append(url)
         return "<p>2,5 Zimmer</p>"
 
     monkeypatch.setattr(scan, "fetch_json", fake_fetch_json)
@@ -343,12 +380,29 @@ def test_scan_gesobau(monkeypatch):
             "rooms": 2.5,
             "sqm": 70.5,
             "link": "https://www.gesobau.de/detail/large",
-            "rent": "1179.98",
+            "rent": "1.179,98",
             "title": "Große Wohnung",
             "address": "Gerichtstraße 13, 13347, Berlin",
             "provider": "GESOBAU",
         }
     ]
+    assert detail_fetches == ["https://www.gesobau.de/detail/large"]
+
+
+def test_fetch_gesobau_detail_rooms_uses_hero_metadata(monkeypatch):
+    html = """
+    <nav>Wohnungen ab 1 Zimmer</nav>
+    <ul class='immoHero__metaData'>
+        <li>2,5 Zimmer</li>
+    </ul>
+    """
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+
+    assert asyncio.run(scan._fetch_gesobau_detail_rooms("https://example.com")) == 2.5
 
 
 def test_scan_degewo(monkeypatch):
@@ -389,7 +443,7 @@ def test_scan_degewo(monkeypatch):
             "rooms": 3.0,
             "sqm": 72.5,
             "link": "https://www.degewo.de/immosuche/details/large",
-            "rent": "1.250,50 €",
+            "rent": "1.250,50",
             "title": "Große Wohnung",
             "address": "Adresse 2 | Kiez",
             "provider": "degewo",

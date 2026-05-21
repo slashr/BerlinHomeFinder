@@ -203,7 +203,7 @@ def _parse_number(value: Any) -> float | None:
         return None
 
     text = html.unescape(str(value)).replace("\xa0", " ").replace("\u202f", " ")
-    match = re.search(r"\d+(?:[.,]\d{3})*(?:[.,]\d+)?|\d+", text)
+    match = re.search(r"\d+(?:[.,]\d+)*", text)
     if not match:
         return None
 
@@ -212,6 +212,10 @@ def _parse_number(value: Any) -> float | None:
         number = number.replace(".", "").replace(",", ".")
     elif "," in number:
         number = number.replace(",", ".")
+    elif "." in number:
+        parts = number.split(".")
+        if len(parts) > 1 and all(len(part) == 3 for part in parts[1:]):
+            number = "".join(parts)
     try:
         return float(number)
     except ValueError:
@@ -223,6 +227,7 @@ def _passes_size_filter(rooms: float | None, sqm: float | None) -> bool:
 
 
 def _passes_rent_filter(value: Any) -> bool:
+    # Missing rent should not hide otherwise valid listings.
     rent = _parse_number(value)
     return rent is None or rent <= MAX_RENT
 
@@ -231,7 +236,10 @@ def _rent_text(value: Any) -> str | None:
     rent = _parse_number(value)
     if rent is None:
         return None
-    return f"{rent:.2f}".rstrip("0").rstrip(".")
+    if rent.is_integer():
+        return f"{int(rent):,}".replace(",", ".")
+    euros, cents = f"{rent:,.2f}".split(".")
+    return f"{euros.replace(',', '.')},{cents}"
 
 
 def _text_or_none(node: Any) -> str | None:
@@ -363,7 +371,7 @@ async def scan_inberlinwohnen() -> List[Listing]:
             sqm = float(st[1].text.replace(",", "."))
             rent_val = float(st[2].text.replace("€", "").replace("ab", "")
                              .replace(".", "").replace(",", "."))
-            if not _passes_size_filter(rooms, sqm) or rent_val > MAX_RENT:
+            if rooms < 3 or rent_val > MAX_RENT:
                 continue
             link = li.find("a", title=lambda t: t and "detailierte" in t)["href"]
             if not link.startswith("http"):
@@ -399,14 +407,16 @@ async def scan_gesobau() -> List[Listing]:
             raw = item.get("raw") or {}
             rooms = _parse_number(raw.get("zimmer_intS"))
             sqm = _parse_number(raw.get("wohnflaeche_floatS"))
+            if not _passes_rent_filter(raw.get("warmmiete_floatS")):
+                continue
+            if sqm is None or sqm < MIN_SQM:
+                continue
 
             detail = raw.get("url") or item.get("detail") or ""
             link = urljoin("https://www.gesobau.de", detail)
             if rooms is None and link:
                 rooms = await _fetch_gesobau_detail_rooms(link)
             if not _passes_size_filter(rooms, sqm):
-                continue
-            if not _passes_rent_filter(raw.get("warmmiete_floatS")):
                 continue
 
             address_parts = [
@@ -440,9 +450,10 @@ async def _fetch_gesobau_detail_rooms(link: str) -> float | None:
     if not html_text:
         return None
     soup = BeautifulSoup(html_text, "lxml")
+    meta = soup.select_one(".immoHero__metaData") or soup
     match = re.search(
         r"(\d+(?:[,.]\d+)?)\s*Zimmer",
-        soup.get_text(" ", strip=True),
+        meta.get_text(" ", strip=True),
         re.IGNORECASE,
     )
     if not match:
@@ -484,6 +495,7 @@ def _parse_degewo_page(soup: BeautifulSoup) -> List[Listing]:
         try:
             facts: Dict[str, str] = {}
             for item in card.select(".c-definition-list__item"):
+                # degewo renders the fact value in dt and its label in dd.
                 value = _text_or_none(item.select_one("dt"))
                 label = _text_or_none(item.select_one("dd"))
                 if value and label:
@@ -512,7 +524,7 @@ def _parse_degewo_page(soup: BeautifulSoup) -> List[Listing]:
                     rooms=rooms,
                     sqm=sqm,
                     link=link,
-                    rent=facts.get("Warmmiete"),
+                    rent=_rent_text(facts.get("Warmmiete")),
                     title=_text_or_none(link_node),
                     address=_text_or_none(card.select_one("h3 + p")),
                     provider="degewo",
@@ -567,6 +579,8 @@ async def scan_howoge() -> List[Listing]:
 
             link = urljoin("https://www.howoge.de", item.get("link") or "")
             title = str(item.get("notice") or "").strip() or None
+            # HOWOGE's current list payload uses title for the street address.
+            address = item.get("title") or item.get("district")
             listings.append(
                 Listing(
                     id=f"howoge_{item['uid']}",
@@ -575,7 +589,7 @@ async def scan_howoge() -> List[Listing]:
                     link=link,
                     rent=_rent_text(item.get("rent")),
                     title=title or item.get("title"),
-                    address=item.get("title") or item.get("district"),
+                    address=address,
                     provider="HOWOGE",
                 )
             )
