@@ -495,9 +495,7 @@ def _parse_inberlinwohnen_legacy(ul: Any) -> List[Listing]:
             if rooms < 3 or rent_val > MAX_RENT:
                 continue
             title = _text_or_none(li.find("h3"))
-            address = _text_or_none(li.select_one(
-                "address, .address, .tb-address, [class*='address'], [class*='Address']"
-            ))
+            address = _text_or_none(li.select_one("address, [class*='address' i]"))
             location_texts = _location_texts_or_fallback(
                 li,
                 [title, address],
@@ -543,8 +541,14 @@ def _inberlin_address_text(address: Dict[str, Any]) -> str | None:
         for part in (address.get("street"), address.get("number"))
         if part
     )
-    parts = [street_line, address.get("zipCode"), address.get("district")]
+    zip_code = str(address.get("zipCode") or "").strip()
+    city = str(address.get("city") or "Berlin").strip()
+    postal_line = " ".join(part for part in (zip_code, city) if part)
+    parts = [street_line, postal_line]
     text = ", ".join(str(part).strip() for part in parts if part)
+    district = str(address.get("district") or "").strip()
+    if text and district and district.casefold() != city.casefold():
+        text = f"{text} ({district})"
     return text or None
 
 
@@ -606,7 +610,7 @@ def _parse_inberlinwohnen_livewire(soup: BeautifulSoup) -> List[Listing]:
                     provider="inBerlinWohnen",
                 )
             )
-        except (TypeError, ValueError):
+        except Exception:
             log.debug("inBerlin Livewire parse error", exc_info=True)
     return listings
 

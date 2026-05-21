@@ -353,10 +353,54 @@ def test_scan_inberlinwohnen_livewire(monkeypatch):
             "link": "https://inberlinwohnen.example/listing/live-1",
             "rent": "1.200",
             "title": "Große Wohnung am Nordufer",
-            "address": "Nordufer 12, 13353, Wedding",
+            "address": "Nordufer 12, 13353 Berlin (Wedding)",
             "provider": "inBerlinWohnen",
         }
     ]
+
+
+def test_scan_inberlinwohnen_skips_malformed_livewire_snapshot(monkeypatch):
+    bad_snapshot = json.dumps([])
+    good_snapshot = json.dumps(
+        {
+            "data": {
+                "item": [
+                    {
+                        "id": "live-1",
+                        "title": "Große Wohnung am Nordufer",
+                        "deeplink": "https://inberlinwohnen.example/listing/live-1",
+                        "rooms": "3",
+                        "area": "72,5",
+                        "rentGross": "1.200,00",
+                        "address": [
+                            {
+                                "street": "Nordufer",
+                                "number": "12",
+                                "zipCode": "13353",
+                                "district": "Wedding",
+                                "lat": "52.5443",
+                                "lon": "13.3569",
+                            },
+                            {"s": "arr"},
+                        ],
+                    },
+                    {"s": "arr"},
+                ]
+            }
+        }
+    )
+    html = f"""
+    <div wire:snapshot='{bad_snapshot}'></div>
+    <div wire:snapshot='{good_snapshot}'></div>
+    """
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+    listings = asyncio.run(scan.scan_inberlinwohnen())
+    assert len(listings) == 1
+    assert listings[0]["id"] == "inberlinwohnen_live-1"
 
 
 def test_scan_inberlinwohnen_filters_non_preferred_livewire(monkeypatch):
