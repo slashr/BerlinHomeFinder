@@ -433,9 +433,11 @@ async def job() -> None:
         )
 
 
-# schedule cron task
-aiocron.crontab(CRON_SCHEDULE, func=lambda: asyncio.create_task(job()), start=True)
-log.info("Cron %s registered – entering loop", CRON_SCHEDULE)
+def main() -> None:
+    aiocron.crontab(CRON_SCHEDULE, func=lambda: asyncio.create_task(job()), start=True)
+    log.info("Cron %s registered – entering loop", CRON_SCHEDULE)
+    asyncio.get_event_loop().run_forever()
+
 
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_forever()
+    main()
