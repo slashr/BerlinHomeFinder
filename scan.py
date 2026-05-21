@@ -382,17 +382,28 @@ async def send_notifications(listings: List[Listing]) -> None:
     fresh = [l for l in listings if l["id"] not in notified]
     if not fresh:
         return
+    sent = 0
     for l in fresh:          # ← sequential loop
         log.debug("Sending listing %s (%s)", l["id"], l["link"])
-        await bot.send_message(
-            chat_id=TG_CHAT,
-            text=build_message(l),
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-        )
-    notified.update(l["id"] for l in fresh)
-    save_state(notified)
-    log.info("Sent %d Telegram messages", len(fresh))
+        try:
+            await bot.send_message(
+                chat_id=TG_CHAT,
+                text=build_message(l),
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+        except Exception as exc:
+            log.error(
+                "Failed to send Telegram message for %s: %s",
+                l["id"],
+                exc,
+                exc_info=True,
+            )
+            continue
+        notified.add(l["id"])
+        save_state(notified)
+        sent += 1
+    log.info("Sent %d Telegram messages", sent)
 
 
 # ─────────────────────────  MAIN JOB  ────────────────────────────── #
