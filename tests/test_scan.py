@@ -288,10 +288,215 @@ def test_scan_inberlinwohnen_skip_wbm(monkeypatch):
     assert listings == []
 
 
-def test_scan_stubs():
-    assert asyncio.run(scan.scan_gesobau()) == []
-    assert asyncio.run(scan.scan_degewo()) == []
-    assert asyncio.run(scan.scan_howoge()) == []
+def test_scan_inberlinwohnen_keeps_legacy_room_filter(monkeypatch):
+    html = """
+    <ul id='_tb_relevant_results'>
+        <li id='b3' class='tb-merkflat'>
+            <a title='detailierte Ansicht' href='/b3detail'>Link</a>
+            <h3>Compact three-room flat</h3>
+            <strong>3</strong>
+            <strong>55</strong>
+            <strong>ab 1200 €</strong>
+        </li>
+    </ul>
+    """
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+    listings = asyncio.run(scan.scan_inberlinwohnen())
+
+    assert listings and listings[0]["id"] == "inberlinwohnen_b3"
+
+
+def test_parse_number_handles_german_formats():
+    assert scan._parse_number("1.179,98 €") == 1179.98
+    assert scan._parse_number("1.234 €") == 1234.0
+    assert scan._parse_number("1.234.567 €") == 1234567.0
+    assert scan._parse_number("2,5 Zimmer") == 2.5
+    assert scan._parse_number("70.5 m²") == 70.5
+    assert scan._parse_number(None) is None
+    assert scan._passes_rent_filter("1.600,00 €")
+    assert not scan._passes_rent_filter("1.600,01 €")
+    assert scan._rent_text("1.179,98 €") == "1.179,98"
+
+
+def test_scan_gesobau(monkeypatch):
+    detail_fetches = []
+    payload = [
+        {
+            "uid": 1,
+            "detail": "/detail/large",
+            "title": "Gerichtstraße 13",
+            "raw": {
+                "objekt_nr_extern_stringS": "obj-1",
+                "url": "/detail/large",
+                "title": "Große Wohnung",
+                "adresse_stringS": "Gerichtstraße 13",
+                "plz_stringS": "13347",
+                "ort_stringS": "Berlin",
+                "wohnflaeche_floatS": "70,5",
+                "warmmiete_floatS": "1.179,98",
+            },
+        },
+        {
+            "uid": 2,
+            "detail": "/detail/small",
+            "title": "Kleine Wohnung",
+            "raw": {
+                "objekt_nr_extern_stringS": "obj-2",
+                "zimmer_intS": 2,
+                "wohnflaeche_floatS": 80,
+            },
+        },
+        {
+            "uid": 3,
+            "detail": "/detail/missing-size",
+            "title": "No size",
+            "raw": {
+                "objekt_nr_extern_stringS": "obj-3",
+                "url": "/detail/missing-size",
+                "warmmiete_floatS": 900,
+            },
+        },
+    ]
+
+    async def fake_fetch_json(url, *, data=None, params=None, timeout=12):
+        return payload
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        detail_fetches.append(url)
+        return "<p>2,5 Zimmer</p>"
+
+    monkeypatch.setattr(scan, "fetch_json", fake_fetch_json)
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+
+    listings = asyncio.run(scan.scan_gesobau())
+
+    assert listings == [
+        {
+            "id": "gesobau_obj-1",
+            "rooms": 2.5,
+            "sqm": 70.5,
+            "link": "https://www.gesobau.de/detail/large",
+            "rent": "1.179,98",
+            "title": "Große Wohnung",
+            "address": "Gerichtstraße 13, 13347, Berlin",
+            "provider": "GESOBAU",
+        }
+    ]
+    assert detail_fetches == ["https://www.gesobau.de/detail/large"]
+
+
+def test_fetch_gesobau_detail_rooms_uses_hero_metadata(monkeypatch):
+    html = """
+    <nav>Wohnungen ab 1 Zimmer</nav>
+    <ul class='immoHero__metaData'>
+        <li>2,5 Zimmer</li>
+    </ul>
+    """
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        return html
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+
+    assert asyncio.run(scan._fetch_gesobau_detail_rooms("https://example.com")) == 2.5
+
+
+def test_scan_degewo(monkeypatch):
+    first_page = """
+    <div class='c-teaser c-teaser--apartment'>
+        <button data-openimmo-bookmark-item-uid='W-small'></button>
+        <h3><a href='/immosuche/details/small'>Klein</a></h3>
+        <p>Adresse 1 | Kiez</p>
+        <div class='c-definition-list__item'><dt>524,12 €</dt><dd>Warmmiete</dd></div>
+        <div class='c-definition-list__item'><dt>1</dt><dd>Zimmer</dd></div>
+        <div class='c-definition-list__item'><dt>39,67</dt><dd>m²</dd></div>
+    </div>
+    <a href='/immosuche?tx_openimmo_immobilie%5Bpage%5D=2&tx_openimmo_immobilie%5Bsearch%5D=paginate#immo-teaser-list'>2</a>
+    """
+    second_page = """
+    <div class='c-teaser c-teaser--apartment'>
+        <button data-openimmo-bookmark-item-uid='W-large'></button>
+        <h3><a href='/immosuche/details/large'>Große Wohnung</a></h3>
+        <p>Adresse 2 | Kiez</p>
+        <div class='c-definition-list__item'><dt>1.250,50 €</dt><dd>Warmmiete</dd></div>
+        <div class='c-definition-list__item'><dt>3</dt><dd>Zimmer</dd></div>
+        <div class='c-definition-list__item'><dt>72,5</dt><dd>m²</dd></div>
+    </div>
+    """
+
+    async def fake_fetch(url, *, params=None, timeout=12):
+        if "page%5D=2" in url:
+            return second_page
+        return first_page
+
+    monkeypatch.setattr(scan, "fetch", fake_fetch)
+
+    listings = asyncio.run(scan.scan_degewo())
+
+    assert listings == [
+        {
+            "id": "degewo_W-large",
+            "rooms": 3.0,
+            "sqm": 72.5,
+            "link": "https://www.degewo.de/immosuche/details/large",
+            "rent": "1.250,50",
+            "title": "Große Wohnung",
+            "address": "Adresse 2 | Kiez",
+            "provider": "degewo",
+        }
+    ]
+
+
+def test_scan_howoge(monkeypatch):
+    payload = {
+        "immoobjects": [
+            {
+                "uid": 7094,
+                "title": "Streitstraße 5, 13587 Berlin",
+                "district": "Hakenfelde",
+                "rent": 803,
+                "area": 73,
+                "rooms": 3,
+                "link": "/immobiliensuche/wohnungssuche/detail/1771-14536-9997.html",
+                "notice": " 3-Zimmer-Wohnung (WBS 100-140)",
+            },
+            {
+                "uid": 7095,
+                "title": "Kleine Wohnung",
+                "rent": 500,
+                "area": 40,
+                "rooms": 1,
+                "link": "/small.html",
+            },
+        ]
+    }
+
+    async def fake_fetch_json(url, *, data=None, params=None, timeout=12):
+        return payload
+
+    monkeypatch.setattr(scan, "fetch_json", fake_fetch_json)
+
+    listings = asyncio.run(scan.scan_howoge())
+
+    assert listings == [
+        {
+            "id": "howoge_7094",
+            "rooms": 3.0,
+            "sqm": 73.0,
+            "link": "https://www.howoge.de/immobiliensuche/wohnungssuche/detail/1771-14536-9997.html",
+            "rent": "803",
+            "title": "3-Zimmer-Wohnung (WBS 100-140)",
+            "address": "Streitstraße 5, 13587 Berlin",
+            "provider": "HOWOGE",
+        }
+    ]
+
+
+def test_scan_stadtundland_stub():
     assert asyncio.run(scan.scan_stadtundland()) == []
 
 
